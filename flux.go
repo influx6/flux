@@ -63,6 +63,9 @@ func (s *Socket) Size() int {
 
 //Emit adds a new data into the channel
 func (s *Socket) Emit(b interface{}) {
+	if s.listeners.Length() <= 0 {
+		return
+	}
 	s.channel <- b
 }
 
