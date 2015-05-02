@@ -1,8 +1,6 @@
 package flux
 
-import (
-	"github.com/influx6/sequence"
-)
+import "github.com/influx6/sequence"
 
 //SocketInterface defines member function rules
 type SocketInterface interface {
