@@ -114,9 +114,9 @@ type Push struct {
 
 //Emit adds a new data into the channel
 func (p *Push) Emit(b interface{}) {
-	// if p.Socket.listeners.Length() <= 0 {
-	// 	return
-	// }
+	if p.Socket.listeners.Length() <= 0 {
+		return
+	}
 	p.Pull.Emit(b)
 	p.Pull.Pull()
 }
