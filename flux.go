@@ -109,13 +109,15 @@ type Pull struct {
 //Push creates a push-like socket
 type Push struct {
 	*Pull
-	// pin *Sub
+	buffer bool
 }
 
 //Emit adds a new data into the channel
 func (p *Push) Emit(b interface{}) {
-	if p.Socket.listeners.Length() <= 0 {
-		return
+	if !p.buffer {
+		if p.Socket.listeners.Length() <= 0 {
+			return
+		}
 	}
 	p.Pull.Emit(b)
 	p.Pull.Pull()
@@ -180,12 +182,36 @@ func PullSocketWith(sock SocketInterface) *Pull {
 
 //PushSocket returns the socket wrapped up in the Push struct
 func PushSocket(buff int) *Push {
-	return &Push{PullSocket(buff)}
+	return &Push{PullSocket(buff), false}
+}
+
+//BufferPushSocket returns the socket wrapped up in the Push struct
+func BufferPushSocket(buff int) *Push {
+	return &Push{PullSocket(buff), true}
+}
+
+//BufferPushSocketWith returns the socket wrapped up in the Push struct
+func BufferPushSocketWith(sock SocketInterface) *Push {
+	return &Push{PullSocketWith(sock), true}
 }
 
 //PushSocketWith returns the socket wrapped up in the Push struct
 func PushSocketWith(sock SocketInterface) *Push {
-	return &Push{PullSocketWith(sock)}
+	return &Push{PullSocketWith(sock), false}
+}
+
+//DoBufferPushSocket creates a pull socket based on a condition
+func DoBufferPushSocket(sock SocketInterface, fn func(f interface{}, sock SocketInterface)) *Push {
+	su := NewSocket(sock.PoolSize())
+
+	pl := &Pull{su, nil}
+	ps := &Push{pl, true}
+
+	pl.pin = sock.Subscribe(func(v interface{}, _ *Sub) {
+		fn(v, ps)
+	})
+
+	return ps
 }
 
 //DoPushSocket creates a pull socket based on a condition
@@ -193,7 +219,7 @@ func DoPushSocket(sock SocketInterface, fn func(f interface{}, sock SocketInterf
 	su := NewSocket(sock.PoolSize())
 
 	pl := &Pull{su, nil}
-	ps := &Push{pl}
+	ps := &Push{pl, false}
 
 	pl.pin = sock.Subscribe(func(v interface{}, _ *Sub) {
 		fn(v, ps)

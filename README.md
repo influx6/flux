@@ -2,6 +2,9 @@
 FBP style socket structure which provide simple data buffering and listener notification
 
 ##Sockets
+ - BufferPush
+ builds on top of the socket structure where every data emitted is immediately sent to the listener lists or buffers within the set size of its buffered channel until a listener is added and the 'Pull' method is called
+
  - Push
  builds on top of the socket structure where every data emitted is immediately sent to the listener lists
 
