@@ -2,6 +2,28 @@ package flux
 
 import "testing"
 
+func TestBufferSocket(t *testing.T) {
+	sock := BufferPushSocket(10)
+
+	defer sock.Close()
+
+	sock.Emit("Token")
+	sock.Emit("Bottle")
+
+	sb := sock.Subscribe(func(v interface{}, s *Sub) {
+		// defer s.Close()
+		_, ok := v.(string)
+		if !ok {
+			t.Fatal("value received is not a string", v, ok, s)
+		}
+	})
+
+	defer sb.Close()
+
+	sock.PullStream()
+	sock.Emit("Throttle")
+}
+
 func TestPullSocket(t *testing.T) {
 	sock := PullSocket(10)
 
@@ -17,7 +39,7 @@ func TestPullSocket(t *testing.T) {
 
 	sock.Emit("Token")
 	sock.Emit("Bottle")
-	sock.Pull()
+	sock.PullStream()
 }
 
 func TestPushSocket(t *testing.T) {
@@ -59,7 +81,7 @@ func TestConditionedPushPullSocket(t *testing.T) {
 	sock.Emit("Token")
 	sock.Emit("Bottle")
 	sock.Emit("Beer")
-	dsock.Pull()
+	dsock.PullStream()
 
 }
 
@@ -85,6 +107,6 @@ func TestConditionedPullPushSocket(t *testing.T) {
 	sock.Emit("Token")
 	sock.Emit("Bottle")
 	sock.Emit("Beer")
-	sock.Pull()
+	sock.PullStream()
 
 }

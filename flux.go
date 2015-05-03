@@ -120,7 +120,7 @@ func (p *Push) Emit(b interface{}) {
 		}
 	}
 	p.Pull.Emit(b)
-	p.Pull.Pull()
+	p.Pull.PullStream()
 }
 
 //Close clears the listerns lists and stops listen to parent if existing
@@ -131,8 +131,8 @@ func (p *Pull) Close() {
 	p.Socket.listeners.Clear()
 }
 
-//Pull is called to initiate the pull sequence op
-func (p *Pull) Pull() {
+//PullStream is called to initiate the pull sequence op
+func (p *Pull) PullStream() {
 	if p.Socket.Size() <= 0 {
 		return
 	}
@@ -161,7 +161,7 @@ func (p *Pull) Pull() {
 		fx(data)
 	}
 
-	p.Pull()
+	p.PullStream()
 }
 
 //PullSocket returns the socket wrapped up in the Pull struct
