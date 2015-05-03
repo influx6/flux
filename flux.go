@@ -298,3 +298,161 @@ func DoPullSocket(sock SocketInterface, fn func(f interface{}, sock SocketInterf
 
 	return pl
 }
+
+//ActionInterface defines member functions
+type ActionInterface interface {
+	Fullfill(b interface{})
+	When(fx func(interface{}, ActionInterface)) ActionInterface
+	Then(fx func(interface{}, ActionInterface)) ActionInterface
+	UseThen(fx func(interface{}, ActionInterface), a ActionInterface) ActionInterface
+	Fullfilled() bool
+	Wrap() *ActionWrap
+}
+
+//ActionWrap safty wraps action for limited access to its fullfill function
+type ActionWrap struct {
+	action *Action
+}
+
+//NewActionWrap returns a action wrapped in a actionwrap
+func NewActionWrap(a *Action) *ActionWrap {
+	return &ActionWrap{a}
+}
+
+//Fullfilled returns true or false if the action is done
+func (a *ActionWrap) Fullfilled() bool {
+	return a.action.Fullfilled()
+}
+
+//Fullfill meets this action of this structure
+func (a *ActionWrap) Fullfill(b interface{}) {
+	return
+}
+
+//When adds a function to the action stack with the action as the second arg
+func (a *ActionWrap) When(fx func(b interface{}, a ActionInterface)) ActionInterface {
+	return a.action.When(fx)
+}
+
+//Then adds a function to the action stack or fires immediately if done
+func (a *ActionWrap) Then(fx func(b interface{}, a ActionInterface)) ActionInterface {
+	return a.action.Then(fx)
+}
+
+//UseThen adds a function with a ActionInterface to the action stack or fires immediately if done
+//once done that action interface is returned
+func (a *ActionWrap) UseThen(fx func(b interface{}, a ActionInterface), f ActionInterface) ActionInterface {
+	return a.action.UseThen(fx, a)
+}
+
+//Wrap returns actionwrap for the action
+func (a *ActionWrap) Wrap() *ActionWrap {
+	return a
+}
+
+//Action provides a future-style connect approach
+type Action struct {
+	fired bool
+	stack *SingleStack
+	cache interface{}
+}
+
+//Wrap returns actionwrap for the action
+func (a *Action) Wrap() *ActionWrap {
+	return NewActionWrap(a)
+}
+
+//Fullfilled returns true or false if the action is done
+func (a *Action) Fullfilled() bool {
+	return a.fired
+}
+
+//Fullfill meets this action of this structure
+func (a *Action) Fullfill(b interface{}) {
+	if !a.fired {
+		a.cache = b
+		a.stack.Each(b)
+		a.fired = true
+		a.stack.Clear()
+	}
+}
+
+//When adds a function to the action stack with the action as the second arg
+func (a *Action) When(fx func(b interface{}, a ActionInterface)) ActionInterface {
+	if a.fired {
+		fx(a.cache, a)
+	} else {
+		a.stack.Add(func(res interface{}) {
+			fx(res, a)
+		})
+	}
+
+	return a
+}
+
+//Then adds a function to the action stack or fires immediately if done
+func (a *Action) Then(fx func(b interface{}, a ActionInterface)) ActionInterface {
+	ac := NewAction()
+	if a.fired {
+		fx(a.cache, ac)
+	} else {
+		a.stack.Add(func(res interface{}) {
+			fx(res, ac)
+		})
+	}
+
+	return ac
+}
+
+//UseThen adds a function with a ActionInterface to the action stack or fires immediately if done
+//once done that action interface is returned
+func (a *Action) UseThen(fx func(b interface{}, a ActionInterface), f ActionInterface) ActionInterface {
+	if a.fired {
+		fx(a.cache, f)
+	} else {
+		a.stack.Add(func(res interface{}) {
+			fx(res, f)
+		})
+	}
+
+	return f
+}
+
+//NewAction returns a new Action struct
+func NewAction() *Action {
+	return &Action{false, NewSingleStack(), nil}
+}
+
+//ActionStack provides two internal stack for success and error
+type ActionStack struct {
+	done    ActionInterface
+	errord  ActionInterface
+	Done    ActionInterface
+	Errored ActionInterface
+}
+
+//Complete allows completion of an action stack
+func (a *ActionStack) Complete(b interface{}) ActionInterface {
+	e, ok := b.(error)
+
+	if ok {
+		a.errord.Fullfill(e)
+		return a.errord
+	}
+
+	a.done.Fullfill(b)
+	return a.done
+}
+
+//NewActionStack returns a new actionStack
+func NewActionStack() *ActionStack {
+	d := NewAction()
+	e := NewAction()
+
+	return &ActionStack{
+		d,
+		e,
+		d.Wrap(),
+		e.Wrap(),
+	}
+}
