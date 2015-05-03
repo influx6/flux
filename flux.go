@@ -1,6 +1,71 @@
 package flux
 
-import "github.com/influx6/sequence"
+import "sync"
+
+//FunctionStack provides addition of functions into a stack
+type FunctionStack struct {
+	listeners []func(...interface{})
+	lock      *sync.RWMutex
+}
+
+//Clear flushes the stack listener
+func (f *FunctionStack) Clear() {
+	f.lock.Lock()
+	f.listeners = make([]func(...interface{}), 0)
+	f.lock.Unlock()
+}
+
+//Size returns the total number of listeners
+func (f *FunctionStack) Size() int {
+	f.lock.RLock()
+	sz := len(f.listeners)
+	f.lock.RUnlock()
+	return sz
+}
+
+//Add adds a function into the stack
+func (f *FunctionStack) Add(fx func(...interface{})) int {
+	f.lock.RLock()
+	ind := len(f.listeners)
+	f.listeners = append(f.listeners, fx)
+	f.lock.RUnlock()
+	return ind
+}
+
+//Delete removes the function at the provided index
+func (f *FunctionStack) Delete(ind int) {
+	f.lock.Lock()
+
+	if ind <= 0 && len(f.listeners) <= 0 {
+		return
+	}
+
+	copy(f.listeners[ind:], f.listeners[ind+1:])
+	f.listeners[len(f.listeners)-1] = nil
+	f.listeners = f.listeners[:len(f.listeners)-1]
+
+	f.lock.Unlock()
+}
+
+//Each runs through the function lists and executing with args
+func (f *FunctionStack) Each(d ...interface{}) {
+	for _, fx := range f.listeners {
+		fx(d...)
+	}
+}
+
+//SingleStack provides a function stack fro single argument
+//functions
+type SingleStack struct {
+	*FunctionStack
+}
+
+//Add adds a function into the stack
+func (s *SingleStack) Add(fx func(interface{})) int {
+	return s.FunctionStack.Add(func(f ...interface{}) {
+		fx(f[0])
+	})
+}
 
 //SocketInterface defines member function rules
 type SocketInterface interface {
@@ -42,7 +107,7 @@ func NewSub(sock SocketInterface, fn func(interface{}, *Sub)) *Sub {
 //Socket is the base structure for all data flow communication
 type Socket struct {
 	channel    chan interface{}
-	listeners  sequence.RootSequencable
+	listeners  *SingleStack
 	bufferSize int
 }
 
@@ -54,6 +119,11 @@ func (s *Socket) PoolSize() int {
 //Subscribe returns a subscriber
 func (s *Socket) Subscribe(fx func(interface{}, *Sub)) *Sub {
 	return NewSub(s, fx)
+}
+
+//ListenerSize returns the size of listeners
+func (s *Socket) ListenerSize() int {
+	return s.listeners.Size()
 }
 
 //Size returns the size of data in the channel
@@ -73,17 +143,8 @@ func (s *Socket) removeListenerIndex(ind int) {
 
 //AddListenerIndex adds a function into the socket queue
 func (s *Socket) addListenerIndex(f func(interface{})) int {
-	size := s.listeners.Length()
-	s.listeners.Add(f)
-	return size
+	return s.listeners.Add(f)
 }
-
-// //Listen adds a function into the socket queue
-// func (s *Socket) Listen(f ...func(interface{})) int {
-// 	size := s.listeners.Length()
-// 	s.listeners.Add(f...)
-// 	return size
-// }
 
 //Stream provides a means of piping the data within a channel into
 //the sockets channel,ensure to close the chan passed as Stream uses
@@ -94,9 +155,24 @@ func (s *Socket) Stream(data chan interface{}) {
 	}
 }
 
+//NewFunctionStack returns a new functionstack instance
+func NewFunctionStack() *FunctionStack {
+	return &FunctionStack{
+		make([]func(...interface{}), 0),
+		new(sync.RWMutex),
+	}
+}
+
+//NewSingleStack returns a singlestack instance
+func NewSingleStack() *SingleStack {
+	return &SingleStack{
+		NewFunctionStack(),
+	}
+}
+
 //NewSocket returns a new socket instance
 func NewSocket(size int) *Socket {
-	li := sequence.NewListSequence(make([]interface{}, 0), 20)
+	li := NewSingleStack()
 	return &Socket{make(chan interface{}, size), li, size}
 }
 
@@ -115,7 +191,7 @@ type Push struct {
 //Emit adds a new data into the channel
 func (p *Push) Emit(b interface{}) {
 	if !p.buffer {
-		if p.Socket.listeners.Length() <= 0 {
+		if p.Socket.listeners.Size() <= 0 {
 			return
 		}
 	}
@@ -137,30 +213,12 @@ func (p *Pull) PullStream() {
 		return
 	}
 
-	if p.Socket.listeners.Length() <= 0 {
+	if p.Socket.listeners.Size() <= 0 {
 		return
 	}
 
-	n := p.Socket.listeners.Iterator()
 	data := <-p.Socket.channel
-
-	for n.HasNext() {
-		err := n.Next()
-
-		if err != nil {
-			break
-			// return
-		}
-
-		fx, ok := n.Value().(func(interface{}))
-
-		if !ok {
-			return
-		}
-
-		fx(data)
-	}
-
+	p.listeners.Each(data)
 	p.PullStream()
 }
 
