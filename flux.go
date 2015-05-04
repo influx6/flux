@@ -49,9 +49,11 @@ func (f *FunctionStack) Delete(ind int) {
 
 //Each runs through the function lists and executing with args
 func (f *FunctionStack) Each(d ...interface{}) {
+	// f.lock.RLock()
 	for _, fx := range f.listeners {
 		fx(d...)
 	}
+	// f.lock.RUnlock()
 }
 
 //SingleStack provides a function stack fro single argument
@@ -318,7 +320,7 @@ type ActionStackInterface interface {
 
 //ActionWrap safty wraps action for limited access to its fullfill function
 type ActionWrap struct {
-	action *Action
+	action ActionInterface
 }
 
 //NewActionWrap returns a action wrapped in a actionwrap
@@ -364,6 +366,67 @@ type Action struct {
 	cache interface{}
 }
 
+//ActDepend provides a nice means of creating a new action depending on
+//unfullfilled action
+type ActDepend struct {
+	root   ActionInterface
+	waiter ActionInterface
+}
+
+//NewActDepend returns a action resolver based on a root action,when this root
+//action is resolved,it waits on the user to call the actdepend then method to complete
+//the next action,why so has to allow user-based chains where the user must partake in the
+//completion of the final action
+func NewActDepend(r ActionInterface) *ActDepend {
+	return &ActDepend{
+		r,
+		NewAction(),
+	}
+}
+
+//NewActDependBy provides the actdepend struct but allows specifying the next call in the chan
+func NewActDependBy(r ActionInterface, v ActionInterface) *ActDepend {
+	return &ActDepend{
+		r,
+		v,
+	}
+}
+
+//Wrap returns actionwrap for the action
+func (a *ActDepend) Wrap() *ActionWrap {
+	return a.waiter.Wrap()
+}
+
+//Fullfilled returns true or false if the action is done
+func (a *ActDepend) Fullfilled() bool {
+	return a.waiter.Fullfilled()
+}
+
+//Fullfill actually fullfills the root action if its not fullfilled already
+func (a *ActDepend) Fullfill(b interface{}) {
+	a.root.Fullfill(b)
+}
+
+//When adds a function to the action stack with the action as the second arg
+func (a *ActDepend) When(fx func(b interface{}, a ActionInterface)) ActionInterface {
+	return a.waiter.When(fx)
+}
+
+//Then adds a function to the action stack or fires immediately if done
+func (a *ActDepend) Then(fx func(b interface{}, a ActionInterface)) ActionInterface {
+	if a.waiter.Fullfilled() {
+		return a.waiter.Then(fx)
+	}
+
+	return a.root.UseThen(fx, a.waiter)
+}
+
+//UseThen adds a function with a ActionInterface to the action stack or fires immediately if done
+//once done that action interface is returned
+func (a *ActDepend) UseThen(fx func(b interface{}, a ActionInterface), f ActionInterface) ActionInterface {
+	return a.waiter.UseThen(fx, a)
+}
+
 //Wrap returns actionwrap for the action
 func (a *Action) Wrap() *ActionWrap {
 	return NewActionWrap(a)
@@ -390,7 +453,9 @@ func (a *Action) When(fx func(b interface{}, a ActionInterface)) ActionInterface
 		fx(a.cache, a)
 	} else {
 		a.stack.Add(func(res interface{}) {
+			// log.Println("calling when callback:", res, a)
 			fx(res, a)
+			// log.Println("called when!")
 		})
 	}
 
@@ -450,6 +515,14 @@ func (a *ActionStack) Error() ActionInterface {
 
 //Complete allows completion of an action stack
 func (a *ActionStack) Complete(b interface{}) ActionInterface {
+	if a.errord.Fullfilled() {
+		return a.errord
+	}
+
+	if a.done.Fullfilled() {
+		return a.done
+	}
+
 	e, ok := b.(error)
 
 	if ok {
@@ -482,6 +555,17 @@ type ActionMod func(a ActionStackInterface) (ActionInterface, ActionInterface)
 //from a previous actionstack with modification
 func NewActionStackFrom(a ActionStackInterface, mod ActionMod) *ActionStack {
 	d, e := mod(a)
+	return &ActionStack{
+		d,
+		e,
+		d.Wrap(),
+		e.Wrap(),
+	}
+}
+
+//NewActionStackBy returns a new actionstack with the predefined actions
+//from a previous actionstack with modification
+func NewActionStackBy(d ActionInterface, e ActionInterface) *ActionStack {
 	return &ActionStack{
 		d,
 		e,
