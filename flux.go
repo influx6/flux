@@ -309,6 +309,13 @@ type ActionInterface interface {
 	Wrap() *ActionWrap
 }
 
+//ActionStackInterface defines actionstack member method rules
+type ActionStackInterface interface {
+	Complete(b interface{}) ActionInterface
+	Done() ActionInterface
+	Error() ActionInterface
+}
+
 //ActionWrap safty wraps action for limited access to its fullfill function
 type ActionWrap struct {
 	action *Action
@@ -427,8 +434,18 @@ func NewAction() *Action {
 type ActionStack struct {
 	done    ActionInterface
 	errord  ActionInterface
-	Done    ActionInterface
-	Errored ActionInterface
+	doned   ActionInterface
+	errored ActionInterface
+}
+
+//Done returns the action for the done state
+func (a *ActionStack) Done() ActionInterface {
+	return a.doned
+}
+
+//Error returns the action for the error state
+func (a *ActionStack) Error() ActionInterface {
+	return a.errored
 }
 
 //Complete allows completion of an action stack
@@ -449,6 +466,22 @@ func NewActionStack() *ActionStack {
 	d := NewAction()
 	e := NewAction()
 
+	return &ActionStack{
+		d,
+		e,
+		d.Wrap(),
+		e.Wrap(),
+	}
+}
+
+//ActionMod defines a function type that modifies a actionstack actions
+//and returns them or the new actions
+type ActionMod func(a ActionStackInterface) (ActionInterface, ActionInterface)
+
+//NewActionStackFrom returns a new actionstack with the predefined actions
+//from a previous actionstack with modification
+func NewActionStackFrom(a ActionStackInterface, mod ActionMod) *ActionStack {
+	d, e := mod(a)
 	return &ActionStack{
 		d,
 		e,
