@@ -503,10 +503,10 @@ func NewActDependBy(r ActionInterface, v ActionInterface, max int) *ActDepend {
 	return act
 }
 
-//MeddleAfter allows calling Then with an action after the current index
+//OverrideAfter allows calling Then with an action after the current index
 //that is you want to listen to the action at this index to fullfill the
 //next index
-func (a *ActDepend) MeddleAfter(index int, fx func(b interface{}, a ActionInterface)) ActionInterface {
+func (a *ActDepend) OverrideAfter(index int, fx func(b interface{}, a ActionInterface)) ActionInterface {
 	ind := 0
 
 	if index < 0 {
@@ -539,10 +539,10 @@ func (a *ActDepend) MeddleAfter(index int, fx func(b interface{}, a ActionInterf
 
 }
 
-//MeddleBefore allows calling Then with an action before the current index
+//OverrideBefore allows calling Then with an action before the current index
 //that is you want to listen to the action at this previous index to fullfill the
 //this action at this index
-func (a *ActDepend) MeddleBefore(index int, fx func(b interface{}, a ActionInterface)) ActionInterface {
+func (a *ActDepend) OverrideBefore(index int, fx func(b interface{}, a ActionInterface)) ActionInterface {
 	ind := 0
 	if index < 0 {
 		ind = a.Size() - ind

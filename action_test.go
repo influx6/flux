@@ -9,26 +9,25 @@ func TestActDepend(t *testing.T) {
 	ax := NewAction()
 	ag := NewActDepend(ax, 3)
 
-	_ = ag.MeddleBefore(1, func(b interface{}, next ActionInterface) {
-		t.Log("1 got:", b)
+	_ = ag.OverrideBefore(1, func(b interface{}, next ActionInterface) {
 		next.Fullfill(b)
 	})
 
-	ag.Then(func(b interface{}, next ActionInterface) {
-		t.Log("first :", b)
+	fx := ag.Then(func(b interface{}, next ActionInterface) {
 		next.Fullfill("through!")
 	}).Then(func(b interface{}, next ActionInterface) {
-		t.Log("scond then:", b)
 		next.Fullfill(b)
 	}).Then(func(b interface{}, next ActionInterface) {
-		t.Log("third then:", b)
-		next.Fullfill(b)
-	}).Then(func(b interface{}, next ActionInterface) {
-		t.Log("third then:", b)
-		next.Fullfill(b)
+		next.Fullfill("josh")
 	})
 
 	ax.Fullfill("Sounds!")
+
+	fv := <-fx.Sync()
+	if "josh" != fv {
+		t.Log("Final value is wrong", fv, fx, ag)
+	}
+
 }
 
 func TestAction(t *testing.T) {
