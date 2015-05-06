@@ -522,6 +522,13 @@ func (a *ActDepend) correctIndex(index int) (int, bool) {
 
 }
 
+//Use returns the ActionInterface wrapped by an ActionWrap
+//at the index or nil
+//supports negative indexing
+func (a *ActDepend) Use(ind int) ActionInterface {
+	return a.getIndex(ind).Wrap()
+}
+
 //GetIndex returns the ActionInterface at the index or nil
 //supports negative indexing
 func (a *ActDepend) getIndex(ind int) ActionInterface {
