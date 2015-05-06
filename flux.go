@@ -1,6 +1,9 @@
 package flux
 
-import "sync"
+import (
+	"log"
+	"sync"
+)
 
 //FunctionStack provides addition of functions into a stack
 type FunctionStack struct {
@@ -308,7 +311,10 @@ type ActionInterface interface {
 	Then(fx func(interface{}, ActionInterface)) ActionInterface
 	UseThen(fx func(interface{}, ActionInterface), a ActionInterface) ActionInterface
 	Fullfilled() bool
+	Chain(int) *ActDepend
+	ChainWith(...ActionInterface) *ActDepend
 	Wrap() *ActionWrap
+	Sync() <-chan interface{}
 }
 
 //ActionStackInterface defines actionstack member method rules
@@ -326,6 +332,11 @@ type ActionWrap struct {
 //NewActionWrap returns a action wrapped in a actionwrap
 func NewActionWrap(a *Action) *ActionWrap {
 	return &ActionWrap{a}
+}
+
+//Chain returns ActDepend(ActionDepend) with this action as the root
+func (a *ActionWrap) Chain(m int) *ActDepend {
+	return a.action.Chain(m)
 }
 
 //Fullfilled returns true or false if the action is done
@@ -359,6 +370,17 @@ func (a *ActionWrap) Wrap() *ActionWrap {
 	return a
 }
 
+//ChainWith returns ActDepend(ActionDepend) with this action as the root
+func (a *ActionWrap) ChainWith(r ...ActionInterface) *ActDepend {
+	return a.action.ChainWith(r...)
+}
+
+//Sync returns unbuffered channel which will get resolved with the
+//value of the action when fullfilled
+func (a *ActionWrap) Sync() <-chan interface{} {
+	return a.action.Sync()
+}
+
 //Action provides a future-style connect approach
 type Action struct {
 	fired bool
@@ -366,40 +388,250 @@ type Action struct {
 	cache interface{}
 }
 
+//Sync returns unbuffered channel which will get resolved with the
+//value of the action when fullfilled
+func (a *Action) Sync() <-chan interface{} {
+	m := make(chan interface{})
+
+	a.When(func(b interface{}, _ ActionInterface) {
+		go func() {
+			m <- b
+			close(m)
+		}()
+	})
+	return m
+}
+
+//Chain returns ActDepend(ActionDepend) with this action as the root
+func (a *Action) Chain(max int) *ActDepend {
+	return NewActDepend(a, max)
+}
+
+//ChainWith returns ActDepend(ActionDepend) with this action as the root
+func (a *Action) ChainWith(r ...ActionInterface) *ActDepend {
+	return NewActDependWith(a, r...)
+}
+
 //ActDepend provides a nice means of creating a new action depending on
 //unfullfilled action
 type ActDepend struct {
-	root   ActionInterface
-	waiter ActionInterface
+	root    ActionInterface
+	waiters []ActionInterface
+	states  map[int]bool
+	ind     int
+	max     int
+	ended   bool
 }
 
 //NewActDepend returns a action resolver based on a root action,when this root
 //action is resolved,it waits on the user to call the actdepend then method to complete
 //the next action,why so has to allow user-based chains where the user must partake in the
 //completion of the final action
-func NewActDepend(r ActionInterface) *ActDepend {
-	return &ActDepend{
+func NewActDepend(r ActionInterface, max int) *ActDepend {
+	var set = make([]ActionInterface, max)
+	var count = 0
+
+	act := &ActDepend{
 		r,
-		NewAction(),
+		set,
+		make(map[int]bool),
+		0,
+		max,
+		false,
 	}
+
+	for count < max {
+		m := NewAction()
+		c := count
+		m.When(func(b interface{}, _ ActionInterface) {
+			act.states[c] = true
+		})
+		set[count] = m
+		act.states[count] = false
+		count++
+	}
+
+	return act
+}
+
+//NewActDependWith provides the actdepend struct but allows specifying the next call in the chan
+func NewActDependWith(root ActionInterface, r ...ActionInterface) *ActDepend {
+	var max = len(r)
+
+	act := &ActDepend{
+		root,
+		r,
+		make(map[int]bool),
+		0,
+		max,
+		false,
+	}
+
+	for k, m := range r {
+		act.states[k] = false
+		c := k
+		m.When(func(b interface{}, _ ActionInterface) {
+			act.states[c] = false
+		})
+	}
+
+	return act
 }
 
 //NewActDependBy provides the actdepend struct but allows specifying the next call in the chan
-func NewActDependBy(r ActionInterface, v ActionInterface) *ActDepend {
-	return &ActDepend{
+func NewActDependBy(r ActionInterface, v ActionInterface, max int) *ActDepend {
+	var set = make([]ActionInterface, max)
+	var count = 1
+
+	act := &ActDepend{
 		r,
-		v,
+		set,
+		make(map[int]bool),
+		0,
+		max,
+		false,
 	}
+
+	for count < max {
+		m := NewAction()
+		c := count
+		m.When(func(b interface{}, _ ActionInterface) {
+			act.states[c] = false
+		})
+		set[count] = m
+		act.states[count] = false
+		count++
+	}
+
+	return act
+}
+
+//MeddleAfter allows calling Then with an action after the current index
+//that is you want to listen to the action at this index to fullfill the
+//next index
+func (a *ActDepend) MeddleAfter(index int, fx func(b interface{}, a ActionInterface)) ActionInterface {
+	ind := 0
+
+	if index < 0 {
+		ind = a.Size() - ind
+		if ind < 0 || ind > a.Size() {
+			return a
+		}
+	} else {
+		ind = index
+		if ind >= a.Size() {
+			ind--
+		}
+	}
+
+	ax := a.waiters[ind]
+	var dx ActionInterface
+	var nx = ind + 1
+
+	if _, ok := a.states[nx]; ok {
+		a.states[nx] = true
+	}
+
+	if nx >= a.Size() {
+		return ax.Then(fx)
+	}
+
+	dx = a.waiters[nx]
+
+	return ax.UseThen(fx, dx)
+
+}
+
+//MeddleBefore allows calling Then with an action before the current index
+//that is you want to listen to the action at this previous index to fullfill the
+//this action at this index
+func (a *ActDepend) MeddleBefore(index int, fx func(b interface{}, a ActionInterface)) ActionInterface {
+	ind := 0
+	if index < 0 {
+		ind = a.Size() - ind
+		if ind < 0 || ind > a.Size() {
+			return a
+		}
+	} else {
+		ind = index
+		if ind >= a.Size() {
+			ind--
+		}
+	}
+
+	ax := a.waiters[ind]
+
+	var dx ActionInterface
+
+	if ind < 1 {
+		dx = a.root
+	} else {
+		dx = a.waiters[ind-1]
+	}
+
+	if _, ok := a.states[ind]; ok {
+		a.states[ind] = true
+	}
+
+	return dx.UseThen(fx, ax)
+	// a.waiters[a.ind]
+	// return ax
+}
+
+//Shift pushes the index up if the action is not yet fully ended
+//allows the next call of Then to be shifted as this states the user
+//wants to manage this on their own
+func (a *ActDepend) shift() {
+	if a.ended {
+		return
+	}
+
+	if a.ind >= a.Size() {
+		return
+	}
+
+	a.ind++
+}
+
+//Size returns the total actions in list
+func (a *ActDepend) Size() int {
+	return len(a.waiters)
+}
+
+//current gets the last ActionInterface in the chain
+func (a *ActDepend) current() ActionInterface {
+	return a.waiters[a.ind]
+}
+
+//ChainWith returns ActDepend(ActionDepend) with this action as the root
+func (a *ActDepend) ChainWith(r ...ActionInterface) *ActDepend {
+	return a.current().ChainWith(r...)
+}
+
+//Sync returns unbuffered channel which will get resolved with the
+//value of the action when fullfilled
+func (a *ActDepend) Sync() <-chan interface{} {
+	return a.current().Sync()
+}
+
+//End stops the generation of new chain
+func (a *ActDepend) End() {
+	a.ended = true
+}
+
+//Chain returns ActDepend(ActionDepend) with this action as the root
+func (a *ActDepend) Chain(max int) *ActDepend {
+	return a
 }
 
 //Wrap returns actionwrap for the action
 func (a *ActDepend) Wrap() *ActionWrap {
-	return a.waiter.Wrap()
+	return a.current().Wrap()
 }
 
 //Fullfilled returns true or false if the action is done
 func (a *ActDepend) Fullfilled() bool {
-	return a.waiter.Fullfilled()
+	return a.current().Fullfilled()
 }
 
 //Fullfill actually fullfills the root action if its not fullfilled already
@@ -409,22 +641,71 @@ func (a *ActDepend) Fullfill(b interface{}) {
 
 //When adds a function to the action stack with the action as the second arg
 func (a *ActDepend) When(fx func(b interface{}, a ActionInterface)) ActionInterface {
-	return a.waiter.When(fx)
+	return a.current().When(fx)
 }
 
 //Then adds a function to the action stack or fires immediately if done
 func (a *ActDepend) Then(fx func(b interface{}, a ActionInterface)) ActionInterface {
-	if a.waiter.Fullfilled() {
-		return a.waiter.Then(fx)
+	ind := a.ind
+	sz := a.Size()
+
+	log.Println("checking:", ind, sz)
+
+	if a.ended {
+		return a.waiters[sz-1].Then(fx)
 	}
 
-	return a.root.UseThen(fx, a.waiter)
+	cur := a.current()
+
+	log.Println("state of current ind:", ind, a.states[ind], a.states[a.ind])
+
+	if a.states[ind] {
+		a.ind++
+		return a.Then(fx)
+	}
+
+	if ind <= 0 {
+		_ = a.root.UseThen(fx, cur)
+	} else {
+		act := a.waiters[a.ind-1]
+		act.UseThen(fx, cur)
+	}
+
+	a.states[ind] = true
+
+	if a.ind < sz && !(a.ind+1 >= sz) {
+		a.ind++
+	} else {
+		a.ended = true
+	}
+
+	// if cur.Fullfilled() {
+	//
+	// 	if a.ended {
+	// 		return cur
+	// 	}
+	//
+	// 	act := a.waiters[ind]
+	// 	cur.UseThen(fx, act)
+	//
+	// 	return a
+	// }
+	//
+	// if !cur.Fullfilled() && a.ind > 0 {
+	// act := a.waiters[a.ind-1]
+	// act.UseThen(fx, cur)
+	// return a
+	// }
+
+	// _ = a.root.UseThen(fx, cur)
+
+	return a
 }
 
 //UseThen adds a function with a ActionInterface to the action stack or fires immediately if done
 //once done that action interface is returned
 func (a *ActDepend) UseThen(fx func(b interface{}, a ActionInterface), f ActionInterface) ActionInterface {
-	return a.waiter.UseThen(fx, a)
+	return a.current().UseThen(fx, a)
 }
 
 //Wrap returns actionwrap for the action
@@ -497,53 +778,46 @@ func NewAction() *Action {
 
 //ActionStack provides two internal stack for success and error
 type ActionStack struct {
-	done    ActionInterface
-	errord  ActionInterface
-	doned   ActionInterface
-	errored ActionInterface
+	success ActionInterface
+	failed  ActionInterface
 }
 
 //Done returns the action for the done state
 func (a *ActionStack) Done() ActionInterface {
-	return a.doned
+	return a.success
 }
 
 //Error returns the action for the error state
 func (a *ActionStack) Error() ActionInterface {
-	return a.errored
+	return a.failed
 }
 
 //Complete allows completion of an action stack
 func (a *ActionStack) Complete(b interface{}) ActionInterface {
-	if a.errord.Fullfilled() {
-		return a.errord
+	if a.failed.Fullfilled() {
+		return a.failed.Wrap()
 	}
 
-	if a.done.Fullfilled() {
-		return a.done
+	if a.success.Fullfilled() {
+		return a.success.Wrap()
 	}
 
 	e, ok := b.(error)
 
 	if ok {
-		a.errord.Fullfill(e)
-		return a.errord
+		a.failed.Fullfill(e)
+		return a.failed.Wrap()
 	}
 
-	a.done.Fullfill(b)
-	return a.done
+	a.success.Fullfill(b)
+	return a.success.Wrap()
 }
 
 //NewActionStack returns a new actionStack
 func NewActionStack() *ActionStack {
-	d := NewAction()
-	e := NewAction()
-
 	return &ActionStack{
-		d,
-		e,
-		d.Wrap(),
-		e.Wrap(),
+		NewAction(),
+		NewAction(),
 	}
 }
 
@@ -558,8 +832,6 @@ func NewActionStackFrom(a ActionStackInterface, mod ActionMod) *ActionStack {
 	return &ActionStack{
 		d,
 		e,
-		d.Wrap(),
-		e.Wrap(),
 	}
 }
 
@@ -569,7 +841,5 @@ func NewActionStackBy(d ActionInterface, e ActionInterface) *ActionStack {
 	return &ActionStack{
 		d,
 		e,
-		d.Wrap(),
-		e.Wrap(),
 	}
 }
