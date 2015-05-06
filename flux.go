@@ -1,6 +1,9 @@
 package flux
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 //FunctionStack provides addition of functions into a stack
 type FunctionStack struct {
@@ -311,7 +314,7 @@ type ActionInterface interface {
 	Chain(int) *ActDepend
 	ChainWith(...ActionInterface) *ActDepend
 	Wrap() *ActionWrap
-	Sync() <-chan interface{}
+	Sync(int) <-chan interface{}
 }
 
 //ActionStackInterface defines actionstack member method rules
@@ -374,8 +377,8 @@ func (a *ActionWrap) ChainWith(r ...ActionInterface) *ActDepend {
 
 //Sync returns unbuffered channel which will get resolved with the
 //value of the action when fullfilled
-func (a *ActionWrap) Sync() <-chan interface{} {
-	return a.action.Sync()
+func (a *ActionWrap) Sync(ms int) <-chan interface{} {
+	return a.action.Sync(ms)
 }
 
 //Action provides a future-style connect approach
@@ -386,16 +389,34 @@ type Action struct {
 }
 
 //Sync returns unbuffered channel which will get resolved with the
-//value of the action when fullfilled
-func (a *Action) Sync() <-chan interface{} {
+//value of the action when fullfilled or when the supplied value of
+//time has passed it will eject
+func (a *Action) Sync(ms int) <-chan interface{} {
 	m := make(chan interface{})
+
+	if ms <= 0 {
+		ms = 1
+	}
+
+	md := time.Duration(ms) * time.Millisecond
+	closed := false
 
 	a.When(func(b interface{}, _ ActionInterface) {
 		go func() {
 			m <- b
-			close(m)
+			if !closed {
+				closed = true
+				close(m)
+			}
 		}()
 	})
+
+	go func() {
+		<-time.After(md)
+		if !closed {
+			close(m)
+		}
+	}()
 	return m
 }
 
@@ -633,8 +654,8 @@ func (a *ActDepend) ChainWith(r ...ActionInterface) *ActDepend {
 
 //Sync returns unbuffered channel which will get resolved with the
 //value of the action when fullfilled
-func (a *ActDepend) Sync() <-chan interface{} {
-	return a.current().Sync()
+func (a *ActDepend) Sync(ms int) <-chan interface{} {
+	return a.current().Sync(ms)
 }
 
 //End stops the generation of new chain
