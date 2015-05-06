@@ -1,9 +1,6 @@
 package flux
 
-import (
-	"log"
-	"sync"
-)
+import "sync"
 
 //FunctionStack provides addition of functions into a stack
 type FunctionStack struct {
@@ -649,15 +646,11 @@ func (a *ActDepend) Then(fx func(b interface{}, a ActionInterface)) ActionInterf
 	ind := a.ind
 	sz := a.Size()
 
-	log.Println("checking:", ind, sz)
-
 	if a.ended {
 		return a.waiters[sz-1].Then(fx)
 	}
 
 	cur := a.current()
-
-	log.Println("state of current ind:", ind, a.states[ind], a.states[a.ind])
 
 	if a.states[ind] {
 		a.ind++
@@ -678,26 +671,6 @@ func (a *ActDepend) Then(fx func(b interface{}, a ActionInterface)) ActionInterf
 	} else {
 		a.ended = true
 	}
-
-	// if cur.Fullfilled() {
-	//
-	// 	if a.ended {
-	// 		return cur
-	// 	}
-	//
-	// 	act := a.waiters[ind]
-	// 	cur.UseThen(fx, act)
-	//
-	// 	return a
-	// }
-	//
-	// if !cur.Fullfilled() && a.ind > 0 {
-	// act := a.waiters[a.ind-1]
-	// act.UseThen(fx, cur)
-	// return a
-	// }
-
-	// _ = a.root.UseThen(fx, cur)
 
 	return a
 }
