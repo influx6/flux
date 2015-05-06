@@ -503,22 +503,50 @@ func NewActDependBy(r ActionInterface, v ActionInterface, max int) *ActDepend {
 	return act
 }
 
-//OverrideAfter allows calling Then with an action after the current index
-//that is you want to listen to the action at this index to fullfill the
-//next index
-func (a *ActDepend) OverrideAfter(index int, fx func(b interface{}, a ActionInterface)) ActionInterface {
+func (a *ActDepend) correctIndex(index int) (int, bool) {
 	ind := 0
 
 	if index < 0 {
 		ind = a.Size() - ind
 		if ind < 0 || ind > a.Size() {
-			return a
+			return 0, false
 		}
 	} else {
 		ind = index
 		if ind >= a.Size() {
 			ind--
 		}
+	}
+
+	return ind, true
+
+}
+
+//GetIndex returns the ActionInterface at the index or nil
+//supports negative indexing
+func (a *ActDepend) getIndex(ind int) ActionInterface {
+	ind, ok := a.correctIndex(ind)
+
+	if !ok {
+		return nil
+	}
+
+	return a.waiters[ind]
+}
+
+//IsIndexFullfilled returns true/false if the action at the index is fullfilled
+func (a *ActDepend) IsIndexFullfilled(ind int) bool {
+	return a.getIndex(ind).Fullfilled()
+}
+
+//OverrideAfter allows calling Then with an action after the current index
+//that is you want to listen to the action at this index to fullfill the
+//next index
+func (a *ActDepend) OverrideAfter(index int, fx func(b interface{}, a ActionInterface)) ActionInterface {
+	ind, ok := a.correctIndex(index)
+
+	if !ok {
+		return a
 	}
 
 	ax := a.waiters[ind]
@@ -543,17 +571,10 @@ func (a *ActDepend) OverrideAfter(index int, fx func(b interface{}, a ActionInte
 //that is you want to listen to the action at this previous index to fullfill the
 //this action at this index
 func (a *ActDepend) OverrideBefore(index int, fx func(b interface{}, a ActionInterface)) ActionInterface {
-	ind := 0
-	if index < 0 {
-		ind = a.Size() - ind
-		if ind < 0 || ind > a.Size() {
-			return a
-		}
-	} else {
-		ind = index
-		if ind >= a.Size() {
-			ind--
-		}
+	ind, ok := a.correctIndex(index)
+
+	if !ok {
+		return a
 	}
 
 	ax := a.waiters[ind]
@@ -571,8 +592,6 @@ func (a *ActDepend) OverrideBefore(index int, fx func(b interface{}, a ActionInt
 	}
 
 	return dx.UseThen(fx, ax)
-	// a.waiters[a.ind]
-	// return ax
 }
 
 //Shift pushes the index up if the action is not yet fully ended
