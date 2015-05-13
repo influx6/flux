@@ -56,8 +56,8 @@ func TestConditionedPushPullSocket(t *testing.T) {
 		}
 	})
 
-	defer sock.Close()
 	defer dsock.Close()
+	defer sock.Close()
 
 	dsock.Subscribe(func(v interface{}, s *Sub) {
 		// defer s.Close()
