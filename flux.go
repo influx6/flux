@@ -1,6 +1,7 @@
 package flux
 
 import (
+	"runtime"
 	"sync"
 	"time"
 )
@@ -14,7 +15,7 @@ type FunctionStack struct {
 //Clear flushes the stack listener
 func (f *FunctionStack) Clear() {
 	f.lock.Lock()
-	f.listeners = make([]func(...interface{}), 0)
+	f.listeners = f.listeners[0:0]
 	f.lock.Unlock()
 }
 
@@ -28,35 +29,39 @@ func (f *FunctionStack) Size() int {
 
 //Add adds a function into the stack
 func (f *FunctionStack) Add(fx func(...interface{})) int {
-	f.lock.RLock()
+	f.lock.Lock()
 	ind := len(f.listeners)
 	f.listeners = append(f.listeners, fx)
-	f.lock.RUnlock()
+	f.lock.Unlock()
 	return ind
 }
 
 //Delete removes the function at the provided index
 func (f *FunctionStack) Delete(ind int) {
-	f.lock.Lock()
 
 	if ind <= 0 && len(f.listeners) <= 0 {
 		return
 	}
 
+	f.lock.RLock()
 	copy(f.listeners[ind:], f.listeners[ind+1:])
 	f.listeners[len(f.listeners)-1] = nil
 	f.listeners = f.listeners[:len(f.listeners)-1]
+	f.lock.RUnlock()
 
-	f.lock.Unlock()
 }
 
 //Each runs through the function lists and executing with args
 func (f *FunctionStack) Each(d ...interface{}) {
-	// f.lock.RLock()
+	if f.Size() <= 0 {
+		return
+	}
+
+	f.lock.RLock()
 	for _, fx := range f.listeners {
 		fx(d...)
 	}
-	// f.lock.RUnlock()
+	f.lock.RUnlock()
 }
 
 //SingleStack provides a function stack fro single argument
@@ -85,9 +90,10 @@ type SocketInterface interface {
 
 //Sub provides a nice clean subscriber connection for socket
 type Sub struct {
-	socket SocketInterface
-	pin    int
-	fnx    func(interface{}, *Sub)
+	socket  SocketInterface
+	pin     int
+	fnx     func(interface{}, *Sub)
+	removed bool
 }
 
 //Close disconnects the subscription
@@ -95,16 +101,19 @@ func (s *Sub) Close() {
 	if s.socket == nil {
 		return
 	}
-	s.socket.removeListenerIndex(s.pin)
 	s.socket = nil
+	s.removed = true
+	// s.socket.removeListenerIndex(s.pin)
 	s.pin = 0
 }
 
 //NewSub returns a new subscriber
 func NewSub(sock SocketInterface, fn func(interface{}, *Sub)) *Sub {
-	sd := &Sub{sock, -1, fn}
+	sd := &Sub{sock, -1, fn, false}
 	sd.pin = sock.addListenerIndex(func(v interface{}) {
-		sd.fnx(v, sd)
+		if !sd.removed {
+			sd.fnx(v, sd)
+		}
 	})
 	return sd
 }
@@ -112,8 +121,11 @@ func NewSub(sock SocketInterface, fn func(interface{}, *Sub)) *Sub {
 //Socket is the base structure for all data flow communication
 type Socket struct {
 	channel    chan interface{}
+	closer     chan struct{}
 	listeners  *SingleStack
 	bufferSize int
+	bufferup   bool
+	when       *sync.Once
 }
 
 //PoolSize returns the size of data in the channel
@@ -121,8 +133,20 @@ func (s *Socket) PoolSize() int {
 	return s.bufferSize
 }
 
+//Close closes the socket internal channel and clears its listener list
+func (s *Socket) Close() {
+	close(s.channel)
+	<-s.closer
+	// s.listeners.lock.Lock()
+	s.listeners.Clear()
+	// s.listeners.lock.Unlock()
+}
+
 //Subscribe returns a subscriber
 func (s *Socket) Subscribe(fx func(interface{}, *Sub)) *Sub {
+	// if s.bufferup {
+	// 	close(s.begin)
+	// }
 	return NewSub(s, fx)
 }
 
@@ -176,132 +200,109 @@ func NewSingleStack() *SingleStack {
 }
 
 //NewSocket returns a new socket instance
-func NewSocket(size int) *Socket {
+func NewSocket(size int, buf bool) *Socket {
 	li := NewSingleStack()
-	return &Socket{make(chan interface{}, size), li, size}
-}
-
-//Pull creates a pull-like socket
-type Pull struct {
-	*Socket
-	pin *Sub
+	return &Socket{
+		make(chan interface{}, size),
+		make(chan struct{}),
+		li,
+		size,
+		buf,
+		new(sync.Once),
+	}
 }
 
 //Push creates a push-like socket
 type Push struct {
-	*Pull
-	buffer bool
+	*Socket
+	pin  *Sub
+	wait *sync.WaitGroup
+	// closer chan struct{}
 }
 
 //Emit adds a new data into the channel
 func (p *Push) Emit(b interface{}) {
-	if !p.buffer {
+	if !p.bufferup {
 		if p.Socket.listeners.Size() <= 0 {
 			return
 		}
 	}
-	p.Pull.Emit(b)
-	p.Pull.PullStream()
+	p.Socket.Emit(b)
 }
 
 //Close clears the listerns lists and stops listen to parent if existing
-func (p *Pull) Close() {
+func (p *Push) Close() {
 	if p.pin != nil {
 		p.pin.Close()
 	}
-	p.Socket.listeners.Clear()
+	p.Socket.Close()
 }
 
-//PullStream is called to initiate the pull sequence op
-func (p *Pull) PullStream() {
-	if p.Socket.Size() <= 0 {
-		return
-	}
-
-	if p.Socket.listeners.Size() <= 0 {
-		return
-	}
-
-	data := <-p.Socket.channel
-	p.listeners.Each(data)
-	p.PullStream()
+//Wait caues the socket to wait till its done
+func (p *Push) Wait() {
+	p.wait.Wait()
 }
 
-//PullSocket returns the socket wrapped up in the Pull struct
-func PullSocket(buff int) *Pull {
-	return &Pull{NewSocket(buff), nil}
-}
-
-//PullSocketWith returns the socket wrapped up in the Pull struct
-func PullSocketWith(sock SocketInterface) *Pull {
-	su := NewSocket(sock.PoolSize())
-	return &Pull{
-		su,
-		sock.Subscribe(func(v interface{}, _ *Sub) {
-			su.Emit(v)
-		}),
-	}
+//PushStream uses the range iterator over the terminal
+func (p *Push) PushStream() {
+	p.wait.Add(1)
+	go func() {
+		// <-p.begin
+		for dx := range p.Socket.channel {
+			p.listeners.Each(dx)
+			runtime.Gosched()
+		}
+		p.wait.Done()
+		p.when.Do(func() {
+			close(p.closer)
+		})
+	}()
 }
 
 //PushSocket returns the socket wrapped up in the Push struct
 func PushSocket(buff int) *Push {
-	return &Push{PullSocket(buff), false}
-}
-
-//BufferPushSocket returns the socket wrapped up in the Push struct
-func BufferPushSocket(buff int) *Push {
-	return &Push{PullSocket(buff), true}
-}
-
-//BufferPushSocketWith returns the socket wrapped up in the Push struct
-func BufferPushSocketWith(sock SocketInterface) *Push {
-	return &Push{PullSocketWith(sock), true}
+	ps := &Push{
+		NewSocket(buff, false),
+		nil,
+		new(sync.WaitGroup),
+	}
+	// close(ps.begin)
+	ps.PushStream()
+	return ps
 }
 
 //PushSocketWith returns the socket wrapped up in the Push struct
 func PushSocketWith(sock SocketInterface) *Push {
-	return &Push{PullSocketWith(sock), false}
-}
+	su := NewSocket(sock.PoolSize(), false)
+	ps := &Push{
+		su,
+		sock.Subscribe(func(v interface{}, _ *Sub) {
+			su.Emit(v)
+		}),
+		new(sync.WaitGroup),
+	}
 
-//DoBufferPushSocket creates a pull socket based on a condition
-func DoBufferPushSocket(sock SocketInterface, fn func(f interface{}, sock SocketInterface)) *Push {
-	su := NewSocket(sock.PoolSize())
-
-	pl := &Pull{su, nil}
-	ps := &Push{pl, true}
-
-	pl.pin = sock.Subscribe(func(v interface{}, _ *Sub) {
-		fn(v, ps)
-	})
-
+	// close(ps.begin)
+	ps.PushStream()
 	return ps
 }
 
 //DoPushSocket creates a pull socket based on a condition
 func DoPushSocket(sock SocketInterface, fn func(f interface{}, sock SocketInterface)) *Push {
-	su := NewSocket(sock.PoolSize())
+	su := NewSocket(sock.PoolSize(), false)
+	ps := &Push{
+		su,
+		nil,
+		new(sync.WaitGroup),
+	}
 
-	pl := &Pull{su, nil}
-	ps := &Push{pl, false}
-
-	pl.pin = sock.Subscribe(func(v interface{}, _ *Sub) {
+	// close(ps.begin)
+	ps.pin = sock.Subscribe(func(v interface{}, _ *Sub) {
 		fn(v, ps)
 	})
 
+	ps.PushStream()
 	return ps
-}
-
-//DoPullSocket creates a pull socket based on a condition
-func DoPullSocket(sock SocketInterface, fn func(f interface{}, sock SocketInterface)) *Pull {
-	su := NewSocket(sock.PoolSize())
-
-	pl := &Pull{su, nil}
-
-	pl.pin = sock.Subscribe(func(v interface{}, _ *Sub) {
-		fn(v, pl)
-	})
-
-	return pl
 }
 
 //ActionInterface defines member functions
@@ -311,6 +312,8 @@ type ActionInterface interface {
 	Then(fx func(interface{}, ActionInterface)) ActionInterface
 	UseThen(fx func(interface{}, ActionInterface), a ActionInterface) ActionInterface
 	Fullfilled() bool
+	ChainAction(ActionInterface) ActionInterface
+	ChainLastAction(ActionInterface) ActionInterface
 	Chain(int) *ActDepend
 	ChainWith(...ActionInterface) *ActDepend
 	Wrap() *ActionWrap
@@ -327,6 +330,72 @@ type ActionStackInterface interface {
 //ActionWrap safty wraps action for limited access to its fullfill function
 type ActionWrap struct {
 	action ActionInterface
+}
+
+//UnwrapAny returns two values where the first is not nil if the ActionInterface is a Action
+//or the second non-nil if its a ActDepend
+func UnwrapAny(a ActionInterface) (*Action, *ActDepend) {
+	wa := UnwrapActionWrap(a)
+	wad := UnwrapActDependWrap(a)
+
+	return wa, wad
+}
+
+//UnwrapAction unwraps an ActionInterface to a *Action
+func UnwrapAction(a ActionInterface) *Action {
+	w, ok := a.(*Action)
+
+	if !ok {
+		return nil
+	}
+
+	return w
+}
+
+//UnwrapActionWrap unwraps an action that has being wrapped with ActionWrap
+func UnwrapActionWrap(a ActionInterface) *Action {
+	w, ok := a.(*ActionWrap)
+
+	if !ok {
+		return UnwrapAction(a)
+	}
+
+	ax, ok := w.action.(*Action)
+
+	if !ok {
+		return UnwrapActionWrap(ax)
+	}
+
+	return ax
+}
+
+//UnwrapActDependWrap unwraps an ActDepend that has being wrapped with ActionWrap
+func UnwrapActDependWrap(a ActionInterface) *ActDepend {
+	w, ok := a.(*ActionWrap)
+
+	if !ok {
+		return UnwrapActDepend(a)
+	}
+
+	ax, ok := w.action.(*ActDepend)
+
+	if !ok {
+		return UnwrapActDependWrap(ax)
+	}
+
+	return ax
+
+}
+
+//UnwrapActDepend unwraps an ActDepend that has being wrapped with ActionWrap
+func UnwrapActDepend(a ActionInterface) *ActDepend {
+	ax, ok := a.(*ActDepend)
+
+	if ok {
+		return ax
+	}
+
+	return nil
 }
 
 //NewActionWrap returns a action wrapped in a actionwrap
@@ -352,6 +421,18 @@ func (a *ActionWrap) Fullfill(b interface{}) {
 //When adds a function to the action stack with the action as the second arg
 func (a *ActionWrap) When(fx func(b interface{}, a ActionInterface)) ActionInterface {
 	return a.action.When(fx)
+}
+
+//ChainAction is a convenience method auto completes another action and returns that action,it uses
+//UseThen underneath
+func (a *ActionWrap) ChainAction(f ActionInterface) ActionInterface {
+	return a.action.ChainAction(f)
+}
+
+//ChainLastAction is a convenience method auto completes another action and returns that action,it uses
+//UseThen underneath
+func (a *ActionWrap) ChainLastAction(f ActionInterface) ActionInterface {
+	return a.action.ChainLastAction(f)
 }
 
 //Then adds a function to the action stack or fires immediately if done
@@ -394,30 +475,50 @@ type Action struct {
 func (a *Action) Sync(ms int) <-chan interface{} {
 	m := make(chan interface{})
 
-	if ms <= 0 {
-		ms = 1
+	if a.cache != nil {
+		go func() {
+			m <- a.cache
+			close(m)
+		}()
+	} else {
+		if ms <= 0 {
+			ms = 1
+		}
+
+		md := time.Duration(ms) * time.Millisecond
+
+		a.When(func(b interface{}, _ ActionInterface) {
+			go func() {
+				m <- b
+				close(m)
+			}()
+		})
+
+		go func() {
+			<-time.After(md)
+			<-m
+		}()
 	}
 
-	md := time.Duration(ms) * time.Millisecond
-	closed := false
-
-	a.When(func(b interface{}, _ ActionInterface) {
-		go func() {
-			m <- b
-			if !closed {
-				closed = true
-				close(m)
-			}
-		}()
-	})
-
-	go func() {
-		<-time.After(md)
-		if !closed {
-			close(m)
-		}
-	}()
 	return m
+}
+
+//ChainLastAction is a convenience method auto completes another action and returns that action,it uses
+//UseThen underneath
+func (a *Action) ChainLastAction(f ActionInterface) ActionInterface {
+	return a.ChainAction(f)
+}
+
+//ChainAction is a convenience method auto completes another action and returns that action,it uses
+//UseThen underneath
+func (a *Action) ChainAction(f ActionInterface) ActionInterface {
+	if a == f {
+		return a
+	}
+
+	return a.UseThen(func(b interface{}, to ActionInterface) {
+		to.Fullfill(b)
+	}, f)
 }
 
 //Chain returns ActDepend(ActionDepend) with this action as the root
@@ -441,6 +542,28 @@ type ActDepend struct {
 	ended   bool
 }
 
+//resolveType is used internall by ActDepend to fix a bug when trying to base
+//other ActDepend to another especially when they share same roots,this
+//cause a no-fullfillment as we are not using the .Then mechanism when calling
+//.Mix or .MixLast
+func resolveType(r ActionInterface) ActionInterface {
+	ax, ad := UnwrapAny(r)
+
+	if ax != nil {
+		return ax
+	}
+
+	if ad != nil {
+		xa := NewAction()
+		ad.When(func(x interface{}, _ ActionInterface) {
+			xa.Fullfill(x)
+		})
+		return xa
+	}
+
+	return r
+}
+
 //NewActDepend returns a action resolver based on a root action,when this root
 //action is resolved,it waits on the user to call the actdepend then method to complete
 //the next action,why so has to allow user-based chains where the user must partake in the
@@ -450,7 +573,7 @@ func NewActDepend(r ActionInterface, max int) *ActDepend {
 	var count = 0
 
 	act := &ActDepend{
-		r,
+		resolveType(r),
 		set,
 		make(map[int]bool),
 		0,
@@ -477,7 +600,7 @@ func NewActDependWith(root ActionInterface, r ...ActionInterface) *ActDepend {
 	var max = len(r)
 
 	act := &ActDepend{
-		root,
+		resolveType(root),
 		r,
 		make(map[int]bool),
 		0,
@@ -502,7 +625,7 @@ func NewActDependBy(r ActionInterface, v ActionInterface, max int) *ActDepend {
 	var count = 1
 
 	act := &ActDepend{
-		r,
+		resolveType(r),
 		set,
 		make(map[int]bool),
 		0,
@@ -543,9 +666,18 @@ func (a *ActDepend) correctIndex(index int) (int, bool) {
 
 }
 
+//First returns the first ActionInterface in the dependency stack
+func (a *ActDepend) First() ActionInterface {
+	return a.getIndex(0)
+}
+
+//Last returns the last ActionInterface in the dependency stack
+func (a *ActDepend) Last() ActionInterface {
+	return a.getIndex(a.Size() - 1)
+}
+
 //Use returns the ActionInterface wrapped by an ActionWrap
-//at the index or nil
-//supports negative indexing
+//at the index or nil and supports negative indexing
 func (a *ActDepend) Use(ind int) ActionInterface {
 	return a.getIndex(ind).Wrap()
 }
@@ -565,6 +697,32 @@ func (a *ActDepend) getIndex(ind int) ActionInterface {
 //IsIndexFullfilled returns true/false if the action at the index is fullfilled
 func (a *ActDepend) IsIndexFullfilled(ind int) bool {
 	return a.getIndex(ind).Fullfilled()
+}
+
+//Mix base the completion of action at a index with a custom action
+//point using OverrideBefore and allows
+//adding an extra step into the dependency action roadmap
+//i.e when the next chain at this index which will complete the
+//next chain if it is not the last as the normal operation of OverrideBefore
+//it will base the completion of that next action on the action being mixed
+//instead of the action at that index,like adding a middleman to a middleman :)
+func (a *ActDepend) Mix(ind int, base ActionInterface) {
+	a.OverrideBefore(ind, func(b interface{}, na ActionInterface) {
+		base.ChainAction(na)
+		base.Fullfill(b)
+	})
+}
+
+//MixLast base adds a new action into the current action stack and
+//calls inserts a ghost action inbetween the action at the index and the next
+//action,when the ghost action is fullfilled the next action is fullfilled
+//It underneaths calls the Action.ChainLastAction which when an ActDepend will
+//resolve the next after the last action has been dissolved
+func (a *ActDepend) MixLast(ind int, base ActionInterface) {
+	a.OverrideBefore(ind, func(b interface{}, na ActionInterface) {
+		base.ChainLastAction(na)
+		base.Fullfill(b)
+	})
 }
 
 //OverrideAfter allows calling Then with an action after the current index
@@ -637,6 +795,11 @@ func (a *ActDepend) shift() {
 	a.ind++
 }
 
+//EqualRoot returns true/false if the root is equal
+func (a *ActDepend) EqualRoot(r ActionInterface) bool {
+	return a.root == r
+}
+
 //Size returns the total actions in list
 func (a *ActDepend) Size() int {
 	return len(a.waiters)
@@ -650,6 +813,18 @@ func (a *ActDepend) current() ActionInterface {
 //ChainWith returns ActDepend(ActionDepend) with this action as the root
 func (a *ActDepend) ChainWith(r ...ActionInterface) *ActDepend {
 	return a.current().ChainWith(r...)
+}
+
+//ChainLastAction is a convenience method auto completes another action and returns that action,it uses
+//UseThen underneath
+func (a *ActDepend) ChainLastAction(f ActionInterface) ActionInterface {
+	return a.Last().ChainLastAction(f)
+}
+
+//ChainAction is a convenience method auto completes another action and returns that action,it uses
+//UseThen underneath
+func (a *ActDepend) ChainAction(f ActionInterface) ActionInterface {
+	return a.current().ChainAction(f)
 }
 
 //Sync returns unbuffered channel which will get resolved with the
@@ -670,7 +845,7 @@ func (a *ActDepend) Chain(max int) *ActDepend {
 
 //Wrap returns actionwrap for the action
 func (a *ActDepend) Wrap() *ActionWrap {
-	return a.current().Wrap()
+	return &ActionWrap{a}
 }
 
 //Fullfilled returns true or false if the action is done
@@ -693,7 +868,8 @@ func (a *ActDepend) Then(fx func(b interface{}, a ActionInterface)) ActionInterf
 	ind := a.ind
 	sz := a.Size()
 
-	if a.ended {
+	if a.ended || (ind+1 > sz) {
+		a.ended = true
 		return a.waiters[sz-1].Then(fx)
 	}
 
@@ -707,13 +883,13 @@ func (a *ActDepend) Then(fx func(b interface{}, a ActionInterface)) ActionInterf
 	if ind <= 0 {
 		_ = a.root.UseThen(fx, cur)
 	} else {
-		act := a.waiters[a.ind-1]
+		act := a.waiters[ind-1]
 		act.UseThen(fx, cur)
 	}
 
 	a.states[ind] = true
 
-	if a.ind < sz && !(a.ind+1 >= sz) {
+	if ind < sz && (ind+1 < sz) {
 		a.ind++
 	} else {
 		a.ended = true
@@ -742,21 +918,19 @@ func (a *Action) Fullfilled() bool {
 func (a *Action) Fullfill(b interface{}) {
 	if !a.fired {
 		a.cache = b
-		a.stack.Each(b)
 		a.fired = true
+		a.stack.Each(b)
 		a.stack.Clear()
 	}
 }
 
 //When adds a function to the action stack with the action as the second arg
-func (a *Action) When(fx func(b interface{}, a ActionInterface)) ActionInterface {
+func (a *Action) When(fx func(b interface{}, e ActionInterface)) ActionInterface {
 	if a.fired {
 		fx(a.cache, a)
 	} else {
 		a.stack.Add(func(res interface{}) {
-			// log.Println("calling when callback:", res, a)
 			fx(res, a)
-			// log.Println("called when!")
 		})
 	}
 

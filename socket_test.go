@@ -2,92 +2,54 @@ package flux
 
 import "testing"
 
-func TestBufferSocket(t *testing.T) {
-	sock := BufferPushSocket(3)
+func TestBlockPushSocket(t *testing.T) {
+	sock := PushSocket(0)
 
-	defer sock.Close()
-
-	sock.Emit("Token")
-	sock.Emit("Bottle")
-
-	sb := sock.Subscribe(func(v interface{}, s *Sub) {
-		// defer s.Close()
+	sock.Subscribe(func(v interface{}, r *Sub) {
+		// defer r.Close()
 		_, ok := v.(string)
+		t.Log("blockpush:", v)
 		if !ok {
-			t.Fatal("value received is not a string", v, ok, s)
+			t.Fatal("value received is not a string", v, ok, r)
 		}
 	})
 
-	defer sb.Close()
-
-	sock.PullStream()
-	sock.Emit("Throttle")
-}
-
-func TestPullSocket(t *testing.T) {
-	sock := PullSocket(1)
-
-	defer sock.Close()
-
-	sock.Subscribe(func(v interface{}, s *Sub) {
-		defer s.Close()
-		_, ok := v.(string)
-		if !ok {
-			t.Fatal("value received is not a string", v, ok, s)
-		}
-	})
+	sock.PushStream()
+	sock.PushStream()
+	sock.PushStream()
 
 	sock.Emit("Token")
-	sock.PullStream()
 	sock.Emit("Bottle")
-	sock.PullStream()
+	sock.Emit("Rocket")
+
+	sock.Close()
 }
 
 func TestPushSocket(t *testing.T) {
-	sock := PushSocket(1)
+	sock := PushSocket(3)
 
-	defer sock.Close()
-
-	sock.Subscribe(func(v interface{}, s *Sub) {
-		// defer s.Close()
+	sock.Subscribe(func(v interface{}, r *Sub) {
+		// defer r.Close()
+		t.Log("testpusher:", v)
 		_, ok := v.(string)
 		if !ok {
-			t.Fatal("value received is not a string", v, ok, s)
+			t.Fatal("value received is not a string", v, ok, r)
 		}
 	})
 
+	sock.PushStream()
+	sock.PushStream()
+	sock.PushStream()
+
 	sock.Emit("Token")
 	sock.Emit("Bottle")
+	sock.Emit("Rocket")
+
+	sock.Close()
 }
 
 func TestConditionedPushPullSocket(t *testing.T) {
-	sock := PushSocket(3)
-	dsock := DoPullSocket(sock, func(v interface{}, s SocketInterface) {
-		if v == "Bottle" {
-			s.Emit(v)
-		}
-	})
-
-	defer sock.Close()
-	defer dsock.Close()
-
-	dsock.Subscribe(func(v interface{}, s *Sub) {
-		defer s.Close()
-		_, ok := v.(string)
-		if !ok {
-			t.Fatal("value received is not a string", v, ok, s)
-		}
-	})
-
-	sock.Emit("Token")
-	sock.Emit("Bottle")
-	sock.Emit("Beer")
-	dsock.PullStream()
-
-}
-
-func TestConditionedPullPushSocket(t *testing.T) {
-	sock := PullSocket(3)
+	sock := PushSocket(0)
 	dsock := DoPushSocket(sock, func(v interface{}, s SocketInterface) {
 		if v == "Bottle" {
 			s.Emit(v)
@@ -98,7 +60,8 @@ func TestConditionedPullPushSocket(t *testing.T) {
 	defer dsock.Close()
 
 	dsock.Subscribe(func(v interface{}, s *Sub) {
-		defer s.Close()
+		// defer s.Close()
+		t.Log("cond:", v)
 		_, ok := v.(string)
 		if !ok {
 			t.Fatal("value received is not a string", v, ok, s)
@@ -108,6 +71,5 @@ func TestConditionedPullPushSocket(t *testing.T) {
 	sock.Emit("Token")
 	sock.Emit("Bottle")
 	sock.Emit("Beer")
-	sock.PullStream()
 
 }

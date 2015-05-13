@@ -23,7 +23,7 @@ func TestActDepend(t *testing.T) {
 
 	ax.Fullfill("Sounds!")
 
-	fv := <-fx.Sync()
+	fv := <-fx.Sync(20)
 	if "josh" != fv {
 		t.Log("Final value is wrong", fv, fx, ag)
 	}
