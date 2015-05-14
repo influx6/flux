@@ -6,6 +6,118 @@ import (
 	"time"
 )
 
+//SecureMap simple represents a map with a rwmutex locked in
+type SecureMap struct {
+	data map[interface{}]interface{}
+	lock *sync.RWMutex
+}
+
+//HasMatch checks if a key exists and if the value matches
+func (m *SecureMap) HasMatch(key, value interface{}) bool {
+	m.lock.RLock()
+	k, ok := m.data[key]
+	m.lock.RUnlock()
+
+	if ok {
+		return k == value
+	}
+
+	return false
+}
+
+//Each interates through the map
+func (m *SecureMap) Each(fn func(val, key interface{}, stop func())) {
+	stop := false
+	m.lock.RLock()
+	for k, v := range m.data {
+		if stop {
+			break
+		}
+
+		fn(v, k, func() { stop = true })
+	}
+	m.lock.RUnlock()
+}
+
+//Keys return the keys of the map
+func (m *SecureMap) Keys() []interface{} {
+	m.lock.RLock()
+	keys := make([]interface{}, len(m.data))
+	count := 0
+	for k := range m.data {
+		keys[count] = k
+		count++
+	}
+	m.lock.RUnlock()
+
+	return keys
+}
+
+//Clone makes a clone for this securemap
+func (m *SecureMap) Clone() *SecureMap {
+	sm := NewSecureMap()
+	m.lock.RLock()
+	for k, v := range m.data {
+		sm.Set(k, v)
+	}
+	m.lock.RUnlock()
+	return sm
+}
+
+//CopySecureMap Copies a  into the map
+func (m *SecureMap) CopySecureMap(src *SecureMap) {
+	src.Each(func(k, v interface{}, _ func()) {
+		m.Set(k, v)
+	})
+}
+
+//Copy Copies a map[interface{}]interface{} into the map
+func (m *SecureMap) Copy(src map[interface{}]interface{}) {
+	for k, v := range src {
+		m.Set(k, v)
+	}
+}
+
+//Has returns true/false if value exists by key
+func (m *SecureMap) Has(key interface{}) bool {
+	m.lock.RLock()
+	_, ok := m.data[key]
+	m.lock.RUnlock()
+	return ok
+}
+
+//Get a key's value
+func (m *SecureMap) Get(key interface{}) interface{} {
+	m.lock.RLock()
+	k := m.data[key]
+	m.lock.RUnlock()
+	return k
+}
+
+//Set a key with value
+func (m *SecureMap) Set(key, value interface{}) {
+	m.lock.Lock()
+	m.data[key] = value
+	m.lock.Unlock()
+}
+
+//Remove a value by its key
+func (m *SecureMap) Remove(key interface{}) {
+	m.lock.Lock()
+	delete(m.data, key)
+	m.lock.Unlock()
+}
+
+//NewSecureMap returns a new securemap
+func NewSecureMap() *SecureMap {
+	return &SecureMap{make(map[interface{}]interface{}), new(sync.RWMutex)}
+}
+
+//SecureMapFrom returns a new securemap
+func SecureMapFrom(core map[interface{}]interface{}) *SecureMap {
+	return &SecureMap{core, new(sync.RWMutex)}
+}
+
 //FunctionStack provides addition of functions into a stack
 type FunctionStack struct {
 	listeners []func(...interface{})
