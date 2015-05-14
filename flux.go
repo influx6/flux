@@ -6,6 +6,24 @@ import (
 	"time"
 )
 
+//Eachfunc defines the type of the Mappable.Each rule
+type Eachfunc func(interface{}, interface{}, func())
+
+//Mappable defines member function rules for securemap
+type Mappable interface {
+	Clear()
+	HasMatch(k, v interface{}) bool
+	Each(f Eachfunc)
+	Keys() []interface{}
+	Copy(map[interface{}]interface{})
+	CopySecureMap(Mappable)
+	Has(interface{}) bool
+	Get(interface{}) interface{}
+	Remove(interface{})
+	Set(k, v interface{})
+	Clone() Mappable
+}
+
 //SecureMap simple represents a map with a rwmutex locked in
 type SecureMap struct {
 	data map[interface{}]interface{}
@@ -33,7 +51,7 @@ func (m *SecureMap) HasMatch(key, value interface{}) bool {
 }
 
 //Each interates through the map
-func (m *SecureMap) Each(fn func(val, key interface{}, stop func())) {
+func (m *SecureMap) Each(fn Eachfunc) {
 	stop := false
 	m.lock.RLock()
 	for k, v := range m.data {
@@ -61,7 +79,7 @@ func (m *SecureMap) Keys() []interface{} {
 }
 
 //Clone makes a clone for this securemap
-func (m *SecureMap) Clone() *SecureMap {
+func (m *SecureMap) Clone() Mappable {
 	sm := NewSecureMap()
 	m.lock.RLock()
 	for k, v := range m.data {
@@ -72,7 +90,7 @@ func (m *SecureMap) Clone() *SecureMap {
 }
 
 //CopySecureMap Copies a  into the map
-func (m *SecureMap) CopySecureMap(src *SecureMap) {
+func (m *SecureMap) CopySecureMap(src Mappable) {
 	src.Each(func(k, v interface{}, _ func()) {
 		m.Set(k, v)
 	})
