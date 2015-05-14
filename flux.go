@@ -86,6 +86,15 @@ type SocketInterface interface {
 	Subscribe(func(interface{}, *Sub)) *Sub
 	Size() int
 	PoolSize() int
+	Close()
+}
+
+//Pipe represent the interface that defines the behaviour of Push and any other
+//type build on top of the SocketInterface type
+type Pipe interface {
+	SocketInterface
+	PushStream()
+	Wait()
 }
 
 //Sub provides a nice clean subscriber connection for socket
@@ -467,6 +476,7 @@ type Action struct {
 	fired bool
 	stack *SingleStack
 	cache interface{}
+	lock  *sync.RWMutex
 }
 
 //Sync returns unbuffered channel which will get resolved with the
@@ -916,17 +926,29 @@ func (a *Action) Fullfilled() bool {
 
 //Fullfill meets this action of this structure
 func (a *Action) Fullfill(b interface{}) {
-	if !a.fired {
-		a.cache = b
-		a.fired = true
-		a.stack.Each(b)
-		a.stack.Clear()
+	a.lock.RLock()
+	state := a.fired
+	a.lock.RUnlock()
+
+	if state {
+		return
 	}
+
+	a.cache = b
+	a.lock.Lock()
+	a.fired = true
+	a.lock.Unlock()
+	a.stack.Each(b)
+	a.stack.Clear()
 }
 
 //When adds a function to the action stack with the action as the second arg
 func (a *Action) When(fx func(b interface{}, e ActionInterface)) ActionInterface {
-	if a.fired {
+	a.lock.RLock()
+	state := a.fired
+	a.lock.RUnlock()
+
+	if state {
 		fx(a.cache, a)
 	} else {
 		a.stack.Add(func(res interface{}) {
@@ -967,7 +989,7 @@ func (a *Action) UseThen(fx func(b interface{}, a ActionInterface), f ActionInte
 
 //NewAction returns a new Action struct
 func NewAction() *Action {
-	return &Action{false, NewSingleStack(), nil}
+	return &Action{false, NewSingleStack(), nil, new(sync.RWMutex)}
 }
 
 //ActionStack provides two internal stack for success and error
