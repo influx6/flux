@@ -12,6 +12,13 @@ type SecureMap struct {
 	lock *sync.RWMutex
 }
 
+//Clear unlinks the previous map
+func (m *SecureMap) Clear() {
+	m.lock.Lock()
+	m.data = make(map[interface{}]interface{})
+	m.lock.Unlock()
+}
+
 //HasMatch checks if a key exists and if the value matches
 func (m *SecureMap) HasMatch(key, value interface{}) bool {
 	m.lock.RLock()
