@@ -6,9 +6,7 @@ func TestBlockPushSocket(t *testing.T) {
 	sock := PushSocket(0)
 
 	sock.Subscribe(func(v interface{}, r *Sub) {
-		// defer r.Close()
 		_, ok := v.(string)
-		t.Log("blockpush:", v)
 		if !ok {
 			t.Fatal("value received is not a string", v, ok, r)
 		}
@@ -29,8 +27,6 @@ func TestPushSocket(t *testing.T) {
 	sock := PushSocket(3)
 
 	sock.Subscribe(func(v interface{}, r *Sub) {
-		// defer r.Close()
-		t.Log("testpusher:", v)
 		_, ok := v.(string)
 		if !ok {
 			t.Fatal("value received is not a string", v, ok, r)
@@ -48,7 +44,27 @@ func TestPushSocket(t *testing.T) {
 	sock.Close()
 }
 
-func TestConditionedPushPullSocket(t *testing.T) {
+func TestPullSocket(t *testing.T) {
+	sock := PullSocket(3)
+
+	sock.Subscribe(func(v interface{}, r *Sub) {
+		_, ok := v.(string)
+		if !ok {
+			t.Fatal("value received is not a string", v, ok, r)
+		}
+	})
+
+	sock.Emit("Token")
+	sock.PushStream()
+	sock.Emit("Bottle")
+	sock.PushStream()
+	sock.Emit("Rocket")
+	sock.PushStream()
+
+	sock.Close()
+}
+
+func TestConditionedPushSocket(t *testing.T) {
 	sock := PushSocket(0)
 	dsock := DoPushSocket(sock, func(v interface{}, s SocketInterface) {
 		if v == "Bottle" {
@@ -60,8 +76,6 @@ func TestConditionedPushPullSocket(t *testing.T) {
 	defer sock.Close()
 
 	dsock.Subscribe(func(v interface{}, s *Sub) {
-		// defer s.Close()
-		t.Log("cond:", v)
 		_, ok := v.(string)
 		if !ok {
 			t.Fatal("value received is not a string", v, ok, s)
@@ -71,5 +85,30 @@ func TestConditionedPushPullSocket(t *testing.T) {
 	sock.Emit("Token")
 	sock.Emit("Bottle")
 	sock.Emit("Beer")
+
+}
+
+func TestConditionedPushPullSocket(t *testing.T) {
+	sock := PushSocket(0)
+	dsock := DoPullSocket(5, sock, func(v interface{}, s SocketInterface) {
+		if v == "Beer" {
+			s.Emit(v)
+		}
+	})
+
+	defer dsock.Close()
+	defer sock.Close()
+
+	dsock.Subscribe(func(v interface{}, s *Sub) {
+		_, ok := v.(string)
+		if !ok {
+			t.Fatal("value received is not a string", v, ok, s)
+		}
+	})
+
+	sock.Emit("Token")
+	sock.Emit("Bottle")
+	sock.Emit("Beer")
+	dsock.PushStream()
 
 }

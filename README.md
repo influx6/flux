@@ -14,7 +14,8 @@ FBP style socket structure which provide simple data buffering and listener noti
 
 #Examples
 
-- Pull Sockets
+- Pull Sockets: With pull sockets we must be ready to loose oldest packet
+when the channel is full
 ```
 
 	sock := PullSocket(10)
@@ -31,7 +32,7 @@ FBP style socket structure which provide simple data buffering and listener noti
 
 	sock.Emit("Token")
 	sock.Emit("Bottle")
-	sock.Pull()
+	sock.PushStream()
 
 
 ```
@@ -67,8 +68,8 @@ FBP style socket structure which provide simple data buffering and listener noti
 
 ```
 
-	sock := PushSocket(10)
-	dsock := DoPullSocket(sock, func(v interface{}, s SocketInterface) {
+	sock := PushSocket(0)
+	dsock := DoPullSocket(10,sock, func(v interface{}, s SocketInterface) {
 		if v == "Bottle" {
 			s.Emit(v)
 		}
@@ -88,12 +89,12 @@ FBP style socket structure which provide simple data buffering and listener noti
 	sock.Emit("Token")
 	sock.Emit("Bottle")
 	sock.Emit("Beer")
-	dsock.Pull()
+	dsock.PushStream()
 
 ```
 
 
-- PushPull Sockets
+- PullPush Sockets
 
 ```
 
@@ -118,7 +119,7 @@ FBP style socket structure which provide simple data buffering and listener noti
 	sock.Emit("Token")
 	sock.Emit("Bottle")
 	sock.Emit("Beer")
-	sock.Pull()
+	sock.PushStream()
 
 
 ```

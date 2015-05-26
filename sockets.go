@@ -149,6 +149,29 @@ type Push struct {
 	// closer chan struct{}
 }
 
+//Pull creates a pull-like socket
+type Pull struct {
+	*Push
+}
+
+//Emit adds a new data into the channel
+func (p *Pull) Emit(b interface{}) {
+	if !p.bufferup {
+		if p.Socket.ListenerSize() <= 0 {
+			return
+		}
+	}
+
+	size := p.Push.Size()
+	max := cap(p.Push.Socket.channel)
+
+	if size >= max {
+		<-p.Push.Socket.channel
+	}
+
+	p.Push.Emit(b)
+}
+
 //Emit adds a new data into the channel
 func (p *Push) Emit(b interface{}) {
 	if !p.bufferup {
@@ -173,6 +196,20 @@ func (p *Push) Wait() {
 }
 
 //PushStream uses the range iterator over the terminal
+func (p *Pull) PushStream() {
+	size := p.Push.Size()
+
+	if size > 0 {
+		p.wait.Add(1)
+		dx := <-p.Push.Socket.channel
+		p.listeners.Each(dx)
+		p.wait.Done()
+		runtime.Gosched()
+		p.PushStream()
+	}
+}
+
+//PushStream uses the range iterator over the terminal
 func (p *Push) PushStream() {
 	p.wait.Add(1)
 	go func() {
@@ -188,6 +225,27 @@ func (p *Push) PushStream() {
 	}()
 }
 
+//PullSocket returns the socket wrapped up in the Push struct
+func PullSocket(buff int) *Pull {
+	if buff <= 0 {
+		buff = 1
+	}
+
+	ps := &Pull{
+		&Push{
+			NewSocket(buff, false),
+			nil,
+			new(sync.WaitGroup),
+		},
+	}
+
+	ps.when.Do(func() {
+		close(ps.closer)
+	})
+
+	return ps
+}
+
 //PushSocket returns the socket wrapped up in the Push struct
 func PushSocket(buff int) *Push {
 	ps := &Push{
@@ -195,7 +253,6 @@ func PushSocket(buff int) *Push {
 		nil,
 		new(sync.WaitGroup),
 	}
-	// close(ps.begin)
 	ps.PushStream()
 	return ps
 }
@@ -211,12 +268,30 @@ func PushSocketWith(sock SocketInterface) *Push {
 		new(sync.WaitGroup),
 	}
 
-	// close(ps.begin)
 	ps.PushStream()
 	return ps
 }
 
-//DoPushSocket creates a pull socket based on a condition
+//PullSocketWith creates a pull socket based on a condition
+func PullSocketWith(size int, sock SocketInterface) *Pull {
+	su := NewSocket(size, false)
+	ps := &Pull{
+		&Push{
+			su,
+			sock.Subscribe(func(v interface{}, _ *Sub) {
+				su.Emit(v)
+			}),
+			new(sync.WaitGroup),
+		},
+	}
+
+	ps.when.Do(func() {
+		close(ps.closer)
+	})
+	return ps
+}
+
+//DoPushSocket creates a push socket based on a condition
 func DoPushSocket(sock SocketInterface, fn func(f interface{}, sock SocketInterface)) *Push {
 	su := NewSocket(sock.PoolSize(), false)
 	ps := &Push{
@@ -225,11 +300,32 @@ func DoPushSocket(sock SocketInterface, fn func(f interface{}, sock SocketInterf
 		new(sync.WaitGroup),
 	}
 
-	// close(ps.begin)
 	ps.pin = sock.Subscribe(func(v interface{}, _ *Sub) {
 		fn(v, ps)
 	})
 
 	ps.PushStream()
+	return ps
+}
+
+//DoPullSocket creates a pull socket based on a condition
+func DoPullSocket(size int, sock SocketInterface, fn func(f interface{}, sock SocketInterface)) *Pull {
+	su := NewSocket(size, false)
+	ps := &Pull{
+		&Push{
+			su,
+			nil,
+			new(sync.WaitGroup),
+		},
+	}
+
+	ps.when.Do(func() {
+		close(ps.closer)
+	})
+
+	ps.pin = sock.Subscribe(func(v interface{}, _ *Sub) {
+		fn(v, ps)
+	})
+
 	return ps
 }
