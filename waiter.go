@@ -69,14 +69,21 @@ func NewTimeWait(max int, duration time.Duration) *TimeWait {
 //handle effects the necessary time process for checking and reducing the
 //time checker for each duration of time,till the Waiter is done
 func (w *TimeWait) handle() {
-iotick:
+	closed := false
+
+	go func() {
+		<-w.closer
+		closed = true
+	}()
+
 	for {
-		select {
-		case <-time.After(w.ms):
-			w.Done()
-		case <-w.closer:
-			break iotick
+		time.Sleep(w.ms)
+
+		if closed {
+			break
 		}
+
+		w.Done()
 	}
 }
 

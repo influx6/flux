@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"io/ioutil"
+	"time"
 )
 
 type (
@@ -42,6 +44,15 @@ type (
 	WrapByteStream struct {
 		StreamInterface
 		reader io.ReadCloser
+		base   StreamInterface
+	}
+
+	//TimedStream provides a bytestream that checks for inactivity
+	//on reads or writes and if its passed its duration time,it closes
+	//the stream
+	TimedStream struct {
+		StreamInterface
+		Idle *TimeWait
 	}
 )
 
@@ -52,28 +63,81 @@ var (
 	ErrReadMisMatch = errors.New("Length MisMatch,Data not fully Read")
 )
 
-//WrapByteStreamWith returns a bytestream that wraps a reader closer
-func WrapByteStreamWith(rd io.ReadCloser) *WrapByteStream {
-	return &WrapByteStream{NewByteStream(), rd}
+//TimedStreamFrom returns a new TimedByteStream instance
+func TimedStreamFrom(ns StreamInterface, max int, ms time.Duration) *TimedStream {
+	ts := &TimedStream{ns, NewTimeWait(max, ms)}
+
+	ts.Idle.Then().WhenOnly(func(_ interface{}) {
+		ts.StreamInterface.Close()
+	})
+
+	return ts
 }
 
-//Read reads the data from internal wrap ReadCloser.
+//Emit push data into the stream
+func (b *TimedStream) Emit(data interface{}) (int, error) {
+	n, err := b.StreamInterface.Emit(data)
+	b.Idle.Add()
+	return n, err
+}
+
+//Write push a byte slice into the stream
+func (b *TimedStream) Write(data []byte) (int, error) {
+	n, err := b.StreamInterface.Write(data)
+	b.Idle.Add()
+	return n, err
+}
+
+//Read is supposed to read data into the supplied byte slice,
+//but for a BaseStream this is a no-op and a 0 is returned as read length
+func (b *TimedStream) Read(data []byte) (int, error) {
+	n, err := b.StreamInterface.Read(data)
+	b.Idle.Add()
+	return n, err
+}
+
+//ReaderModByteStreamBy returns a bytestream that its input will be modded
+func ReaderModByteStreamBy(base StreamInterface, fx StreamMod, rd io.ReadCloser) (*WrapByteStream, error) {
+	bs, err := DoByteStream(base, fx)
+	return &WrapByteStream{bs, rd, base}, err
+}
+
+//ReaderModByteStream returns a bytestream that its input will be modded
+func ReaderModByteStream(fx StreamMod, rd io.ReadCloser) (*WrapByteStream, error) {
+	ns := NewByteStream()
+	bs, err := DoByteStream(ns, fx)
+	return &WrapByteStream{bs, rd, ns}, err
+}
+
+//ReaderByteStream returns a bytestream that wraps a reader closer
+func ReaderByteStream(rd io.Reader) *WrapByteStream {
+	return &WrapByteStream{NewByteStream(), ioutil.NopCloser(rd), nil}
+}
+
+//ReadCloserByteStream returns a bytestream that wraps a reader closer
+func ReadCloserByteStream(rd io.ReadCloser) *WrapByteStream {
+	return &WrapByteStream{NewByteStream(), rd, nil}
+}
+
+//Close closes the stream and its associated reader
+func (b *WrapByteStream) Close() error {
+	err := b.reader.Close()
+	_ = b.StreamInterface.Close()
+	return err
+}
+
+//Read reads the data from internal wrap ReadCloser if it fails,
+//it attempts to read from the ByteStream buffer and returns
 func (b *WrapByteStream) Read(data []byte) (int, error) {
-	var nx int
-	var errx error
-	var err error
+	nx, err := b.reader.Read(data)
 
-	nx, errx = b.reader.Read(data)
-
-	if errx != nil {
-		nx, err = b.StreamInterface.Read(data)
-
-		if err == nil {
-			errx = nil
-		}
+	if err == nil {
+		var cd []byte
+		copy(cd, data)
+		b.Write(cd)
 	}
 
-	return nx, errx
+	return nx, err
 }
 
 //NewBaseStream returns a basestream instance
