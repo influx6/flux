@@ -48,7 +48,33 @@ type (
 var (
 	//ErrWrongType denotes a wrong-type assertion
 	ErrWrongType = errors.New("Wrong Type!")
+	//ErrReadMisMatch denotes when the total bytes length is not read
+	ErrReadMisMatch = errors.New("Length MisMatch,Data not fully Read")
 )
+
+//WrapByteStreamWith returns a bytestream that wraps a reader closer
+func WrapByteStreamWith(rd io.ReadCloser) *WrapByteStream {
+	return &WrapByteStream{NewByteStream(), rd}
+}
+
+//Read reads the data from internal wrap ReadCloser.
+func (b *WrapByteStream) Read(data []byte) (int, error) {
+	var nx int
+	var errx error
+	var err error
+
+	nx, errx = b.reader.Read(data)
+
+	if errx != nil {
+		nx, err = b.StreamInterface.Read(data)
+
+		if err == nil {
+			errx = nil
+		}
+	}
+
+	return nx, errx
+}
 
 //NewBaseStream returns a basestream instance
 func NewBaseStream() *BaseStream {
