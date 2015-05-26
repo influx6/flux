@@ -8,6 +8,7 @@ import (
 //ActionInterface defines member functions
 type ActionInterface interface {
 	Fullfill(b interface{})
+	WhenOnly(fx func(interface{})) ActionInterface
 	When(fx func(interface{}, ActionInterface)) ActionInterface
 	Then(fx func(interface{}, ActionInterface)) ActionInterface
 	UseThen(fx func(interface{}, ActionInterface), a ActionInterface) ActionInterface
@@ -116,6 +117,11 @@ func (a *ActionWrap) Fullfilled() bool {
 //Fullfill meets this action of this structure
 func (a *ActionWrap) Fullfill(b interface{}) {
 	return
+}
+
+//WhenOnly adds a function to the action stack with the action as the second arg
+func (a *ActionWrap) WhenOnly(fx func(b interface{})) ActionInterface {
+	return a.action.WhenOnly(fx)
 }
 
 //When adds a function to the action stack with the action as the second arg
@@ -559,6 +565,11 @@ func (a *ActDepend) Fullfill(b interface{}) {
 	a.root.Fullfill(b)
 }
 
+//WhenOnly adds a function to the action stack with the action as the second arg
+func (a *ActDepend) WhenOnly(fx func(b interface{})) ActionInterface {
+	return a.current().WhenOnly(fx)
+}
+
 //When adds a function to the action stack with the action as the second arg
 func (a *ActDepend) When(fx func(b interface{}, a ActionInterface)) ActionInterface {
 	return a.current().When(fx)
@@ -631,6 +642,13 @@ func (a *Action) Fullfill(b interface{}) {
 	a.lock.Unlock()
 	a.stack.Each(b)
 	a.stack.Clear()
+}
+
+//WhenOnly adds a function to the action stack with the action as the second arg
+func (a *Action) WhenOnly(fx func(b interface{})) ActionInterface {
+	return a.When(func(v interface{}, _ ActionInterface) {
+		fx(v)
+	})
 }
 
 //When adds a function to the action stack with the action as the second arg

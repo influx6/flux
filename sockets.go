@@ -1,7 +1,6 @@
 package flux
 
 import (
-	"log"
 	"runtime"
 	"sync"
 )
@@ -157,7 +156,6 @@ func (p *Push) Emit(b interface{}) {
 			return
 		}
 	}
-	log.Printf("Emitting: size: %v data:%+v", p.Socket.ListenerSize(), b)
 	p.Socket.Emit(b)
 }
 

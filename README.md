@@ -14,33 +14,6 @@ FBP style socket structure which provide simple data buffering and listener noti
 
 #Examples
 
-- BufferedPush Sockets
-```
-
-	sock := BufferPushSocket(10)
-
-	defer sock.Close()
-
-	sock.Emit("Token")
-	sock.Emit("Bottle")
-
-	sock.Subscribe(func(v interface{}, s *Sub) {
-		defer s.Close()
-		_, ok := v.(string)
-		if !ok {
-			t.Fatal("value received is not a string", v, ok, s)
-		}
-	})
-
-  //need to call this because data has been emitted already
-  //since it buffers
-	sock.Pull()
-
-  //or just emit another data
-  sock.Emit("Floor")
-
-```
-
 - Pull Sockets
 ```
 
@@ -67,20 +40,26 @@ FBP style socket structure which provide simple data buffering and listener noti
 
 ```
 
-	sock := PushSocket(10)
+	sock := PushSocket(0)
 
-	defer sock.Close()
-
-	sock.Subscribe(func(v interface{}, s *Sub) {
-		defer s.Close()
+	sock.Subscribe(func(v interface{}, r *Sub) {
+		// defer r.Close()
 		_, ok := v.(string)
+		t.Log("blockpush:", v)
 		if !ok {
-			t.Fatal("value received is not a string", v, ok, s)
+			t.Fatal("value received is not a string", v, ok, r)
 		}
 	})
 
+	sock.PushStream()
+	sock.PushStream()
+	sock.PushStream()
+
 	sock.Emit("Token")
 	sock.Emit("Bottle")
+	sock.Emit("Rocket")
+
+	sock.Close()
 
 ```
 
