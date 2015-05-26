@@ -68,10 +68,16 @@ func TimedStreamFrom(ns StreamInterface, max int, ms time.Duration) *TimedStream
 	ts := &TimedStream{ns, NewTimeWait(max, ms)}
 
 	ts.Idle.Then().WhenOnly(func(_ interface{}) {
-		ts.StreamInterface.Close()
+		_ = ts.StreamInterface.Close()
 	})
 
 	return ts
+}
+
+//Close closes the timestream idletimer which closes the inner stream
+func (b *TimedStream) Close(data interface{}) error {
+	b.Idle.Flush()
+	return nil
 }
 
 //Emit push data into the stream
