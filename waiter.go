@@ -69,17 +69,19 @@ func NewTimeWait(max int, duration time.Duration) *TimeWait {
 //handle effects the necessary time process for checking and reducing the
 //time checker for each duration of time,till the Waiter is done
 func (w *TimeWait) handle() {
-	closed := false
+	var state int64
+	atomic.StoreInt64(&state, 0)
 
 	go func() {
 		<-w.closer
-		closed = true
+		atomic.StoreInt64(&state, 1)
 	}()
 
 	for {
 		time.Sleep(w.ms)
 
-		if closed {
+		bit := atomic.LoadInt64(&state)
+		if bit > 0 {
 			break
 		}
 

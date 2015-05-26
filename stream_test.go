@@ -3,6 +3,7 @@ package flux
 import (
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestBaseStream(t *testing.T) {
@@ -74,4 +75,26 @@ func TestDoByteStream(t *testing.T) {
 	sm.Write([]byte("God!"))
 	sm.Emit("Love!")
 	ws.Wait()
+}
+
+func TestTimedByteStream(t *testing.T) {
+	sm := TimedByteStream(30, time.Duration(3)*time.Second)
+
+	if sm == nil {
+		t.Fatal("Unable to  create streamer")
+	}
+
+	ws := new(sync.WaitGroup)
+
+	ws.Add(2)
+
+	sm.Subscribe(func(b interface{}, _ *Sub) {
+		t.Logf("Subscription Recieved: %s : %+v", b, b)
+		ws.Done()
+	})
+
+	sm.Write([]byte("God!"))
+	sm.Emit("Love!")
+	ws.Wait()
+	sm.Close()
 }

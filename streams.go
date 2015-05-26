@@ -63,7 +63,7 @@ var (
 	ErrReadMisMatch = errors.New("Length MisMatch,Data not fully Read")
 )
 
-//TimedStreamFrom returns a new TimedByteStream instance
+//TimedStreamFrom returns a new TimedStream instance
 func TimedStreamFrom(ns StreamInterface, max int, ms time.Duration) *TimedStream {
 	ts := &TimedStream{ns, NewTimeWait(max, ms)}
 
@@ -74,8 +74,13 @@ func TimedStreamFrom(ns StreamInterface, max int, ms time.Duration) *TimedStream
 	return ts
 }
 
+//TimedByteStream returns a new TimedStream instance using a bytestream underneaths
+func TimedByteStream(max int, ms time.Duration) *TimedStream {
+	return TimedStreamFrom(NewByteStream(), max, ms)
+}
+
 //Close closes the timestream idletimer which closes the inner stream
-func (b *TimedStream) Close(data interface{}) error {
+func (b *TimedStream) Close() error {
 	b.Idle.Flush()
 	return nil
 }
