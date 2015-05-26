@@ -47,6 +47,14 @@ type TimeWait struct {
 }
 
 //NewTimeWait returns a new timer wait locker
+//You specifiy two arguments:
+//max int: the maximum number of time you want to check for idleness
+//duration time.Duration: the time to check for each idle times and reduce
+//until zero is reached then close
+//eg. to do a 15seconds check for idleness
+//NewTimeWait(15,time.Duration(1)*time.Second)
+//eg. to do a 25 maximum check before closing per minute
+//NewTimeWait(15,time.Duration(1)*time.Minute)
 func NewTimeWait(max int, duration time.Duration) *TimeWait {
 
 	if max <= 0 {

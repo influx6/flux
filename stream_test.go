@@ -78,7 +78,7 @@ func TestDoByteStream(t *testing.T) {
 }
 
 func TestTimedByteStream(t *testing.T) {
-	sm := TimedByteStream(1, time.Duration(3)*time.Second)
+	sm := TimedByteStream(1, time.Duration(1)*time.Second)
 
 	if sm == nil {
 		t.Fatal("Unable to  create streamer")
