@@ -92,13 +92,13 @@ func (w *TimeWait) Flush() {
 	w.doonce.Do(func() {
 		close(w.closer)
 		w.action.Fullfill(0)
-		w.hits = int64(0)
+		atomic.StoreInt64(&w.hits, 0)
 	})
 }
 
 //Count returns the total left count to completed before unlock
 func (w *TimeWait) Count() int {
-	return int(w.hits)
+	return int(atomic.LoadInt64(&w.hits))
 }
 
 //Add increments the lock state to the lock counter unless its already unlocked
