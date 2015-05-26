@@ -24,6 +24,7 @@ type (
 		Read([]byte) (int, error)
 		Emit(interface{}) (int, error)
 		Close() error
+		String() string
 		OnClosed() ActionInterface
 	}
 
@@ -226,6 +227,16 @@ func (b *BaseStream) StreamWriter(w io.Writer) *Sub {
 //Subscribe provides a subscription into the stream
 func (b *BaseStream) Subscribe(fn func(interface{}, *Sub)) *Sub {
 	return b.push.Subscribe(fn)
+}
+
+//String returns the content of the buffer
+func (b *ByteStream) String() string {
+	return b.buf.String()
+}
+
+//String returns a string empty value
+func (b *BaseStream) String() string {
+	return ""
 }
 
 //Emit push data into the stream
