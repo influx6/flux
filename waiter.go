@@ -23,6 +23,7 @@ type SwitchInterface interface {
 	WhenOff() ActionInterface
 }
 
+//baseWait defines the base wait structure for all waiters
 type baseWait struct {
 	action ActionInterface
 }
