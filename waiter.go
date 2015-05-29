@@ -132,7 +132,7 @@ func (w *TimeWait) Done() {
 
 	newhit := atomic.AddInt64(&w.hits, -1)
 
-	if int(newhit) < 0 {
+	if int(newhit) <= 0 {
 		w.Flush()
 	}
 }
@@ -187,7 +187,7 @@ func (w *Wait) Done() {
 
 	nc := atomic.AddInt64(&w.totalCount, -1)
 
-	if int(nc) < 0 {
+	if int(nc) <= 0 {
 		w.action.Fullfill(0)
 	}
 }
