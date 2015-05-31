@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
+	"sync"
 	"time"
 )
 
@@ -24,9 +25,9 @@ type (
 		Read([]byte) (int, error)
 		Emit(interface{}) (int, error)
 		Close() error
+		End() error
 		String() string
 		OnClosed() ActionInterface
-		Reset()
 	}
 
 	//ByteStreamInterface defunes the interface method for byte streamers
@@ -64,6 +65,7 @@ type (
 		StreamInterface
 		reader io.ReadCloser
 		base   StreamInterface
+		doend  *sync.Once
 	}
 
 	//TimedStream provides a bytestream that checks for inactivity
@@ -87,7 +89,7 @@ func TimedStreamFrom(ns StreamInterface, max int, ms time.Duration) *TimedStream
 	ts := &TimedStream{ns, NewTimeWait(max, ms)}
 
 	ts.Idle.Then().WhenOnly(func(_ interface{}) {
-		_ = ts.StreamInterface.Close()
+		_ = ts.StreamInterface.End()
 	})
 
 	return ts
@@ -98,7 +100,7 @@ func TimedByteStreamWith(tm *TimeWait) *TimedStream {
 	ts := &TimedStream{NewByteStream(), tm}
 
 	ts.Idle.Then().WhenOnly(func(_ interface{}) {
-		_ = ts.StreamInterface.Close()
+		_ = ts.StreamInterface.End()
 	})
 
 	return ts
@@ -109,7 +111,7 @@ func UseTimedByteStream(ns StreamInterface, tm *TimeWait) *TimedStream {
 	ts := &TimedStream{ns, tm}
 
 	ts.Idle.Then().WhenOnly(func(_ interface{}) {
-		_ = ts.StreamInterface.Close()
+		_ = ts.StreamInterface.End()
 	})
 
 	return ts
@@ -120,15 +122,19 @@ func TimedByteStream(max int, ms time.Duration) *TimedStream {
 	return TimedStreamFrom(NewByteStream(), max, ms)
 }
 
-//Reset ends the timer and resets the StreamInterface
-func (b *TimedStream) Reset() {
-	b.StreamInterface.Reset()
-	b.Idle.Flush()
+//Close ends the timer and resets the StreamInterface
+func (b *TimedStream) Close() error {
+	err := b.StreamInterface.Close()
+	errx := b.End()
+	if err == nil {
+		return errx
+	}
+	return err
 }
 
-//Close closes the timestream idletimer which closes the inner stream
-func (b *TimedStream) Close() error {
-	// b.Idle.Flush()
+//End closes the timestream idletimer which closes the inner stream
+func (b *TimedStream) End() error {
+	b.Idle.Flush()
 	return nil
 }
 
@@ -157,30 +163,52 @@ func (b *TimedStream) Read(data []byte) (int, error) {
 //ReaderModByteStreamBy returns a bytestream that its input will be modded
 func ReaderModByteStreamBy(base StreamInterface, fx StreamMod, rd io.ReadCloser) (*WrapByteStream, error) {
 	bs, err := DoByteStream(base, fx)
-	return &WrapByteStream{bs, rd, base}, err
+	return &WrapByteStream{bs, rd, base, new(sync.Once)}, err
 }
 
 //ReaderModByteStream returns a bytestream that its input will be modded
 func ReaderModByteStream(fx StreamMod, rd io.ReadCloser) (*WrapByteStream, error) {
 	ns := NewByteStream()
 	bs, err := DoByteStream(ns, fx)
-	return &WrapByteStream{bs, rd, ns}, err
+	return &WrapByteStream{bs, rd, ns, new(sync.Once)}, err
 }
 
 //ReaderByteStream returns a bytestream that wraps a reader closer
 func ReaderByteStream(rd io.Reader) *WrapByteStream {
-	return &WrapByteStream{NewByteStream(), ioutil.NopCloser(rd), nil}
+	return &WrapByteStream{NewByteStream(), ioutil.NopCloser(rd), nil, new(sync.Once)}
 }
 
 //ReadCloserByteStream returns a bytestream that wraps a reader closer
 func ReadCloserByteStream(rd io.ReadCloser) *WrapByteStream {
-	return &WrapByteStream{NewByteStream(), rd, nil}
+	return &WrapByteStream{NewByteStream(), rd, nil, new(sync.Once)}
+}
+
+//End closes the reader and calls the corresponding end function
+func (b *WrapByteStream) End() error {
+	var err error
+	b.doend.Do(func() {
+		err = b.reader.Close()
+	})
+	errx := b.StreamInterface.End()
+
+	if err == nil {
+		return errx
+	}
+
+	return err
 }
 
 //Close closes the stream and its associated reader
 func (b *WrapByteStream) Close() error {
-	err := b.reader.Close()
-	_ = b.StreamInterface.Close()
+	var err error
+	b.doend.Do(func() {
+		err = b.reader.Close()
+	})
+	errx := b.StreamInterface.Close()
+	if err == nil {
+		return errx
+	}
+
 	return err
 }
 
@@ -208,8 +236,9 @@ func (b *BaseStream) OnClosed() ActionInterface {
 	return b.closed.Wrap()
 }
 
-//Reset resets the stream but this is a no-op
-func (b *BaseStream) Reset() {
+//End resets the stream but this is a no-op
+func (b *BaseStream) End() error {
+	return nil
 }
 
 //Close closes the stream
@@ -435,13 +464,14 @@ func (b *ByteStream) Emit(data interface{}) (int, error) {
 	return b.StreamInterface.Emit(buff)
 }
 
-//Reset resets the stream bytebuffer
-func (b *ByteStream) Reset() {
-	b.buf.Reset()
+//End resets the stream bytebuffer
+func (b *ByteStream) End() error {
+	return b.StreamInterface.End()
 }
 
 //Close closes the stream
 func (b *ByteStream) Close() error {
 	b.StreamInterface.Close()
+	b.buf.Reset()
 	return nil
 }
