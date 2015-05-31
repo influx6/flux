@@ -3,6 +3,7 @@ package flux
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"sync"
@@ -28,23 +29,13 @@ type (
 		End() error
 		String() string
 		OnClosed() ActionInterface
+		Push()
 	}
 
-	//ByteStreamInterface defunes the interface method for byte streamers
-	ByteStreamInterface interface {
+	//RecordedStreamInterface defines the interface method for time streams
+	RecordedStreamInterface interface {
 		StreamInterface
-	}
-
-	//TimeStreamInterface defines the interface method for time streams
-	TimeStreamInterface interface {
-		StreamInterface
-		Flush()
-	}
-
-	//ByteTimeStreamInterface defunes the interface methods for time byte streams
-	ByteTimeStreamInterface interface {
-		StreamInterface
-		Flush()
+		Stamp(int) (time.Time, bool)
 	}
 
 	//BaseStream defines a basic stream structure
@@ -58,6 +49,13 @@ type (
 	ByteStream struct {
 		StreamInterface
 		buf *bytes.Buffer
+	}
+
+	//RecordedStream provides a recorded byte streamer that replays when subscribed to
+	RecordedStream struct {
+		StreamInterface
+		buf    *SecureStack
+		stamps *SecureMap
 	}
 
 	//WrapByteStream provides a ByteStream wrapped around a reader
@@ -135,7 +133,7 @@ func (b *TimedStream) Close() error {
 //End closes the timestream idletimer which closes the inner stream
 func (b *TimedStream) End() error {
 	b.Idle.Flush()
-	return nil
+	return b.StreamInterface.End()
 }
 
 //Emit push data into the stream
@@ -226,6 +224,11 @@ func (b *WrapByteStream) Read(data []byte) (int, error) {
 	return nx, err
 }
 
+//DeferBaseStream returns a basestream instance
+func DeferBaseStream(n int) *BaseStream {
+	return &BaseStream{PullSocket(n), NewAction(), nil}
+}
+
 //NewBaseStream returns a basestream instance
 func NewBaseStream() *BaseStream {
 	return &BaseStream{PushSocket(0), NewAction(), nil}
@@ -234,6 +237,14 @@ func NewBaseStream() *BaseStream {
 //OnClosed returns an action that gets fullfilled when the stream is closed
 func (b *BaseStream) OnClosed() ActionInterface {
 	return b.closed.Wrap()
+}
+
+//Push in the case of an internal pushstream spins up a new go-routine for
+//handling incoming data into the blocking channel and for pull stream
+//pushes out the data in the channel,only used this when dealing with
+//DeferBaseStreams
+func (b *BaseStream) Push() {
+	b.push.PushStream()
 }
 
 //End resets the stream but this is a no-op
@@ -315,7 +326,7 @@ func (b *ByteStream) String() string {
 
 //String returns a string empty value
 func (b *BaseStream) String() string {
-	return ""
+	return fmt.Sprintf("%+v %+v %+v", b.push, b.sub, b.closed)
 }
 
 //Emit push data into the stream
@@ -387,12 +398,93 @@ func ByteStreamFrom(b StreamInterface) *ByteStream {
 	return nb
 }
 
+//NewRecordedStream returns a new Stream instance
+func NewRecordedStream() *RecordedStream {
+	return &RecordedStream{
+		NewBaseStream(),
+		NewSecureStack(),
+		NewSecureMap(),
+	}
+}
+
 //NewByteStream returns a new Stream instance
 func NewByteStream() *ByteStream {
 	return &ByteStream{
 		NewBaseStream(),
 		new(bytes.Buffer),
 	}
+}
+
+//Stamp returns the time when a particular data of a particular index was added
+func (b *RecordedStream) Stamp(at int) (time.Time, bool) {
+	n, ok := b.stamps.Get(at).(time.Time)
+	return n, ok
+}
+
+//Write reads the data in the byte slice into the buffer while notifying
+//listeners
+func (b *RecordedStream) Write(data []byte) (int, error) {
+	n := b.buf.Add(data)
+	b.stamps.Set(n, time.Now())
+	_, _ = b.StreamInterface.Emit(data)
+	return n, nil
+}
+
+//Read reads the last data from the internal buf into the provided slice
+func (b *RecordedStream) Read(data []byte) (int, error) {
+	total := len(data)
+
+	if total <= 0 {
+		total = b.buf.Size()
+	}
+
+	last, ok := b.buf.Get(total).([]byte)
+
+	if ok {
+		var dup []byte
+		sz := len(last)
+
+		if sz >= total {
+			dup = last[0:total]
+		} else {
+			dup = last
+		}
+
+		copy(data, dup)
+	}
+
+	return total, nil
+}
+
+//Stream provides a subscription into the stream and returns a streamer that
+//reads the buffer and connects for future data
+func (b *RecordedStream) Stream() (StreamInterface, error) {
+	sz := b.buf.Size()
+	rz := int(sz/2) + sz
+	nb := DeferBaseStream(rz)
+
+	b.buf.Each(func(data interface{}) {
+		nb.Emit(data)
+	})
+
+	nb.sub = b.Subscribe(func(b interface{}, _ *Sub) {
+		nb.Emit(b)
+		nb.Push()
+	})
+
+	return nb, nil
+}
+
+//End resets the stream bytebuffer
+func (b *RecordedStream) End() error {
+	return b.StreamInterface.End()
+}
+
+//Close closes the stream
+func (b *RecordedStream) Close() error {
+	b.StreamInterface.Close()
+	b.buf.Clear()
+	return nil
 }
 
 //Write reads the data in the byte slice into the buffer while notifying

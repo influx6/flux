@@ -98,3 +98,53 @@ func TestTimedByteStream(t *testing.T) {
 	ws.Wait()
 	sm.Close()
 }
+
+func TestRecordStream(t *testing.T) {
+	rs := NewRecordedStream()
+
+	if rs == nil {
+		t.Fatal("unable to create recordedstream")
+	}
+
+	defer rs.Close()
+
+	rs.Subscribe(func(data interface{}, _ *Sub) {
+		_, ok := data.([]byte)
+		if !ok {
+			t.Fatal("Data received is not a byte splice:", data)
+		}
+	})
+
+	rs.Write([]byte("Wonder"))
+	rs.Write([]byte("ful"))
+	rs.Write([]byte("!!"))
+}
+
+func TestStreamRecord(t *testing.T) {
+	rs := NewRecordedStream()
+
+	if rs == nil {
+		t.Fatal("unable to create recordedstream")
+	}
+
+	defer rs.Close()
+
+	rs.Write([]byte("Wonder"))
+	rs.Write([]byte("ful"))
+	rs.Write([]byte("!!"))
+
+	ds, err := rs.Stream()
+
+	if err != nil {
+		t.Fatal("Unable to create stream from source:", err)
+	}
+
+	ds.Subscribe(func(data interface{}, _ *Sub) {
+		_, ok := data.([]byte)
+		if !ok {
+			t.Fatal("Data received is not a byte splice:", data)
+		}
+	})
+	ds.Push()
+
+}

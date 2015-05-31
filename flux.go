@@ -139,6 +139,120 @@ func SecureMapFrom(core map[interface{}]interface{}) *SecureMap {
 	return &SecureMap{core, new(sync.RWMutex)}
 }
 
+//SecureStack provides addition of functions into a stack
+type SecureStack struct {
+	listeners []interface{}
+	lock      *sync.RWMutex
+}
+
+//Splice returns a new splice from the list
+func (f *SecureStack) Splice(begin, end int) []interface{} {
+	size := f.Size()
+
+	if end > size {
+		end = size
+	}
+
+	f.lock.RLock()
+	ms := f.listeners[begin:end]
+	f.lock.RUnlock()
+	var dup []interface{}
+	copy(dup, ms)
+	return dup
+}
+
+//Set lets you retrieve an item in the list
+func (f *SecureStack) Set(ind int, d interface{}) {
+	sz := f.Size()
+
+	if ind >= sz {
+		return
+	}
+
+	if ind < 0 {
+		ind = sz - ind
+		if ind < 0 {
+			return
+		}
+	}
+
+	f.lock.Lock()
+	f.listeners[ind] = d
+	f.lock.Unlock()
+}
+
+//Get lets you retrieve an item in the list
+func (f *SecureStack) Get(ind int) interface{} {
+	sz := f.Size()
+	if ind >= sz {
+		ind = sz - 1
+	}
+
+	if ind < 0 {
+		ind = sz - ind
+		if ind < 0 {
+			return nil
+		}
+	}
+
+	f.lock.RLock()
+	r := f.listeners[ind]
+	f.lock.RUnlock()
+	return r
+}
+
+//Clear flushes the stack listener
+func (f *SecureStack) Clear() {
+	f.lock.Lock()
+	f.listeners = f.listeners[0:0]
+	f.lock.Unlock()
+}
+
+//Size returns the total number of listeners
+func (f *SecureStack) Size() int {
+	f.lock.RLock()
+	sz := len(f.listeners)
+	f.lock.RUnlock()
+	return sz
+}
+
+//Add adds a function into the stack
+func (f *SecureStack) Add(fx interface{}) int {
+	f.lock.Lock()
+	ind := len(f.listeners)
+	f.listeners = append(f.listeners, fx)
+	f.lock.Unlock()
+	return ind
+}
+
+//Delete removes the function at the provided index
+func (f *SecureStack) Delete(ind int) {
+
+	if ind <= 0 && len(f.listeners) <= 0 {
+		return
+	}
+
+	f.lock.RLock()
+	copy(f.listeners[ind:], f.listeners[ind+1:])
+	f.listeners[len(f.listeners)-1] = nil
+	f.listeners = f.listeners[:len(f.listeners)-1]
+	f.lock.RUnlock()
+
+}
+
+//Each runs through the function lists and executing with args
+func (f *SecureStack) Each(fx func(interface{})) {
+	if f.Size() <= 0 {
+		return
+	}
+
+	f.lock.RLock()
+	for _, d := range f.listeners {
+		fx(d)
+	}
+	f.lock.RUnlock()
+}
+
 //FunctionStack provides addition of functions into a stack
 type FunctionStack struct {
 	listeners []func(...interface{})
@@ -208,6 +322,14 @@ func (s *SingleStack) Add(fx func(interface{})) int {
 	return s.FunctionStack.Add(func(f ...interface{}) {
 		fx(f[0])
 	})
+}
+
+//NewSecureStack returns a new functionstack instance
+func NewSecureStack() *SecureStack {
+	return &SecureStack{
+		make([]interface{}, 0),
+		new(sync.RWMutex),
+	}
 }
 
 //NewFunctionStack returns a new functionstack instance

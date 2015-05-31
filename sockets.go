@@ -156,12 +156,6 @@ type Pull struct {
 
 //Emit adds a new data into the channel
 func (p *Pull) Emit(b interface{}) {
-	if !p.bufferup {
-		if p.Socket.ListenerSize() <= 0 {
-			return
-		}
-	}
-
 	size := p.Push.Size()
 	max := cap(p.Push.Socket.channel)
 
@@ -169,7 +163,7 @@ func (p *Pull) Emit(b interface{}) {
 		<-p.Push.Socket.channel
 	}
 
-	p.Push.Emit(b)
+	p.Push.Socket.Emit(b)
 }
 
 //Emit adds a new data into the channel
