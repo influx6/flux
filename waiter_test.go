@@ -6,12 +6,57 @@ import (
 	"time"
 )
 
+func TestOneTimeWaiter(t *testing.T) {
+	ms := time.Duration(3) * time.Second
+
+	w := NewTimeWait(0, ms)
+	ws := new(sync.WaitGroup)
+
+	t.Log("Before Add: Count:", w.Count())
+	w.Add()
+	ws.Add(1)
+	t.Log("After 2 Add: Count:", w.Count())
+
+	w.Then().When(func(v interface{}, _ ActionInterface) {
+		_, ok := v.(int)
+
+		if !ok {
+			t.Fatal("Waiter completed with non-int value:", v)
+		}
+
+		t.Log("TimeWaiter Finished")
+		ws.Done()
+	})
+
+	if w == nil {
+		t.Fatal("Unable to create waiter")
+	}
+
+	if w.Count() < 0 {
+		t.Fatal("Waiter completed before use")
+	}
+
+	if w.Count() < 1 {
+		t.Fatalf("TimeWaiter count is at %d below 1 after two calls to Add()", w.Count())
+	}
+
+	if w.Count() < -1 {
+		t.Fatal("Waiter just did a bad logic and went below -1")
+	}
+
+	// t.Log("Calling Done()")
+	w.Done()
+
+	ws.Wait()
+}
+
 func TestTimeWaiter(t *testing.T) {
 	ms := time.Duration(1) * time.Second
 
 	w := NewTimeWait(0, ms)
 	ws := new(sync.WaitGroup)
 
+	t.Log("Before Add: Count:", w.Count())
 	ws.Add(1)
 
 	w.Then().When(func(v interface{}, _ ActionInterface) {
@@ -61,7 +106,7 @@ func TestWaiter(t *testing.T) {
 			t.Fatal("Waiter completed with non-int value:", v)
 		}
 
-		t.Log("Waiter Finished")
+		t.Log("SimpleWaiter Finished")
 	})
 
 	if w == nil {
@@ -79,6 +124,7 @@ func TestWaiter(t *testing.T) {
 	}
 
 	cu := w.Count()
+	t.Log("SimpleWait Count:", cu)
 
 	w.Done()
 

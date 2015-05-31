@@ -58,10 +58,6 @@ type TimeWait struct {
 //NewTimeWait(15,time.Duration(1)*time.Minute)
 func NewTimeWait(max int, duration time.Duration) *TimeWait {
 
-	if max <= 0 {
-		max = 1
-	}
-
 	tm := &TimeWait{
 		newBaseWait(),
 		make(chan struct{}),
@@ -70,6 +66,7 @@ func NewTimeWait(max int, duration time.Duration) *TimeWait {
 		new(sync.Once),
 	}
 
+	// tm.Add()
 	go tm.handle()
 
 	return tm
@@ -154,10 +151,12 @@ func NewWait() WaitInterface {
 //Flush drops the lock count and forces immediate unlocking of the wait
 func (w *Wait) Flush() {
 	curr := int(atomic.LoadInt64(&w.totalCount))
-	for curr >= 0 {
-		w.Done()
-		curr--
+	if curr < 0 {
+		return
 	}
+
+	atomic.StoreInt64(&w.totalCount, 0)
+	w.Done()
 }
 
 //Count returns the total left count to completed before unlock
