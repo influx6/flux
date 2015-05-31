@@ -36,6 +36,7 @@ type (
 	RecordedStreamInterface interface {
 		StreamInterface
 		Stamp(int) (time.Time, bool)
+		Reply(func(interface{}, time.Time))
 	}
 
 	//BaseStream defines a basic stream structure
@@ -174,6 +175,16 @@ func ReaderModByteStream(fx StreamMod, rd io.ReadCloser) (*WrapByteStream, error
 //ReaderByteStream returns a bytestream that wraps a reader closer
 func ReaderByteStream(rd io.Reader) *WrapByteStream {
 	return &WrapByteStream{NewByteStream(), ioutil.NopCloser(rd), nil, new(sync.Once)}
+}
+
+//ReaderStream returns a bytestream that wraps a reader closer
+func ReaderStream(ns StreamInterface, rd io.Reader) *WrapByteStream {
+	return &WrapByteStream{ns, ioutil.NopCloser(rd), nil, new(sync.Once)}
+}
+
+//ReaderCloserStream returns a bytestream that wraps a reader closer
+func ReaderCloserStream(ns StreamInterface, rd io.ReadCloser) *WrapByteStream {
+	return &WrapByteStream{ns, rd, nil, new(sync.Once)}
 }
 
 //ReadCloserByteStream returns a bytestream that wraps a reader closer
@@ -364,7 +375,6 @@ func DoByteStream(b StreamInterface, fn StreamMod) (*ByteStream, error) {
 		}
 
 		return fn(buff)
-
 	})
 
 	if err != nil {
@@ -456,6 +466,17 @@ func (b *RecordedStream) Read(data []byte) (int, error) {
 	return total, nil
 }
 
+//Replay iterates through the recorded data providing the data and the
+//corresponding time it was added
+func (b *RecordedStream) Replay(fx func(b interface{}, ms time.Time)) {
+	ind := 0
+	b.buf.Each(func(data interface{}) {
+		ms, _ := b.Stamp(ind)
+		fx(b, ms)
+		ind++
+	})
+}
+
 //Stream provides a subscription into the stream and returns a streamer that
 //reads the buffer and connects for future data
 func (b *RecordedStream) Stream() (StreamInterface, error) {
@@ -473,6 +494,11 @@ func (b *RecordedStream) Stream() (StreamInterface, error) {
 	})
 
 	return nb, nil
+}
+
+//String returns the string of its stack
+func (b *RecordedStream) String() string {
+	return b.buf.String()
 }
 
 //End resets the stream bytebuffer

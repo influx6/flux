@@ -1,6 +1,9 @@
 package flux
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 //Eachfunc defines the type of the Mappable.Each rule
 type Eachfunc func(interface{}, interface{}, func())
@@ -199,6 +202,14 @@ func (f *SecureStack) Get(ind int) interface{} {
 	r := f.listeners[ind]
 	f.lock.RUnlock()
 	return r
+}
+
+//Strings return the stringified version of the internal list
+func (f *SecureStack) String() string {
+	f.lock.RLock()
+	sz := fmt.Sprintf("%+v", f.listeners)
+	f.lock.RUnlock()
+	return sz
 }
 
 //Clear flushes the stack listener
