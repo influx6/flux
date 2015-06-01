@@ -584,6 +584,15 @@ func (b *RecordedStream) Stamp(at int) (time.Time, bool) {
 	return n, ok
 }
 
+//Emit reads the data in the byte slice into the buffer while notifying
+//listeners
+func (b *RecordedStream) Emit(data interface{}) (int, error) {
+	n := b.buf.Add(data)
+	b.stamps.Set(n, time.Now())
+	_, _ = b.StreamInterface.Emit(data)
+	return n, nil
+}
+
 //Write reads the data in the byte slice into the buffer while notifying
 //listeners
 func (b *RecordedStream) Write(data []byte) (int, error) {
