@@ -1,6 +1,7 @@
 package flux
 
 import (
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -128,7 +129,7 @@ func (w *TimeWait) Done() {
 	}
 
 	newhit := atomic.AddInt64(&w.hits, -1)
-
+	log.Printf("TimeWait: Count Down now %d before %d", newhit, hits)
 	if int(newhit) <= 0 {
 		w.Flush()
 	}
@@ -185,6 +186,7 @@ func (w *Wait) Done() {
 	}
 
 	nc := atomic.AddInt64(&w.totalCount, -1)
+	log.Printf("Wait: Count Down now %d before %d", nc, curr)
 
 	if int(nc) <= 0 {
 		w.action.Fullfill(0)
