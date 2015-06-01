@@ -42,7 +42,8 @@ type (
 	//for its inner content
 	SplicableStreamInterface interface {
 		SizableStreamInterface
-		Splice(start, end int) interface{}
+		Splice(start, end int) interface{} //destructive
+		Slice(start, end int) interface{}  //non-destructive
 	}
 
 	//RecordedStreamInterface defines the interface method for time streams
@@ -271,8 +272,13 @@ func (b *BaseStream) OnClosed() ActionInterface {
 	return b.closed.Wrap()
 }
 
-//Splice of the buffer,BaseStream has no buffer
+//Splice of the buffer,BaseStream has no buffer,destructive op
 func (b *BaseStream) Splice(s, e int) interface{} {
+	return nil
+}
+
+//Slice of the buffer,BaseStream has no buffer,non-destructive op
+func (b *BaseStream) Slice(s, e int) interface{} {
 	return nil
 }
 
@@ -456,6 +462,23 @@ func NewByteStream() *ByteStream {
 	}
 }
 
+//MixCountStream returns a UntilStream that counts to a set limit and
+//then collects and modifies the data then publishes that list of data
+func MixCountStream(limit int, base SplicableStreamInterface, mixfn func(b interface{}) interface{}) *UntilStream {
+	return NewUntilStream(base, func(b SplicableStreamInterface, u *UntilStream) {
+		if b.Size() >= limit {
+			bu := b.Splice(0, b.Size())
+			if bu != nil {
+				bum := mixfn(bu)
+				if bum != nil {
+					u.SuperEmit(mixfn)
+				}
+			}
+		}
+
+	})
+}
+
 //NewCountStream returns a UntilStream that counts to a set limit and
 //then collects and publishes that list of data
 func NewCountStream(limit int, base SplicableStreamInterface) *UntilStream {
@@ -528,6 +551,11 @@ func (b *ByteStream) Splice(start, end int) interface{} {
 	return bu
 }
 
+//Slice returns the a slice of the buffer
+func (b *ByteStream) Slice(start, end int) interface{} {
+	return b.Splice(start, end)
+}
+
 //Size returns the count of record data in the stream
 func (b *ByteStream) Size() int {
 	return b.buf.Len()
@@ -538,9 +566,16 @@ func (b *RecordedStream) Size() int {
 	return b.buf.Size()
 }
 
-//Splice returns the a slice of the buffer
-func (b *RecordedStream) Splice(start, end int) interface{} {
+//Slice a nondestructive operation returns the a slice of the buffer
+func (b *RecordedStream) Slice(start, end int) interface{} {
 	return b.buf.Splice(start, end)
+}
+
+//Splice a destructive operation returns the a slice of the buffer
+func (b *RecordedStream) Splice(start, end int) interface{} {
+	m := b.buf.Splice(start, end)
+	b.buf.Clear()
+	return m
 }
 
 //Stamp returns the time when a particular data of a particular index was added
