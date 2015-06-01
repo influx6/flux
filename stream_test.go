@@ -127,6 +127,52 @@ func TestUntilStream(t *testing.T) {
 
 }
 
+func TestUntilStreamMix(t *testing.T) {
+	rs := NewRecordedStream()
+	us := MixCountStream(2, rs, func(pack interface{}) interface{} {
+		d, ok := pack.([]interface{})
+
+		if !ok {
+			t.Fatal("Slice is not a []interface{} slice", pack, ok)
+		}
+
+		var sub [][]byte
+
+		for _, m := range d {
+			ax, ok := m.([]byte)
+			if ok {
+				sub = append(sub, ax)
+			}
+		}
+
+		return sub
+	})
+
+	if rs == nil {
+		t.Fatal("unable to create recordedstream")
+	}
+
+	if us == nil {
+		t.Fatal("unable to create UntilStream")
+	}
+
+	defer us.Close()
+	defer rs.Close()
+
+	us.Subscribe(func(data interface{}, s *Sub) {
+		_, ok := data.([][]byte)
+		if ok {
+			defer s.Close()
+			t.Fatal("Data received is not a byte splice [][]byte:", data)
+		}
+	})
+
+	rs.Write([]byte("Wonder"))
+	rs.Write([]byte("ful"))
+	rs.Write([]byte("!!"))
+
+}
+
 func TestRecordStream(t *testing.T) {
 	rs := NewRecordedStream()
 

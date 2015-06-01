@@ -471,7 +471,7 @@ func MixCountStream(limit int, base SplicableStreamInterface, mixfn func(b inter
 			if bu != nil {
 				bum := mixfn(bu)
 				if bum != nil {
-					u.SuperEmit(mixfn)
+					u.SuperEmit(bum)
 				}
 			}
 		}

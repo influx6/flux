@@ -80,10 +80,12 @@ func (s *Socket) ClearListeners() {
 //Close closes the socket internal channel and clears its listener list
 func (s *Socket) Close() {
 	close(s.channel)
-	<-s.closer
-	// s.listeners.lock.Lock()
-	s.ClearListeners()
-	// s.listeners.lock.Unlock()
+	go func() {
+		<-s.closer
+		// s.listeners.lock.Lock()
+		s.ClearListeners()
+		// s.listeners.lock.Unlock()
+	}()
 }
 
 //Subscribe returns a subscriber
