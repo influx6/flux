@@ -99,6 +99,34 @@ func TestTimedByteStream(t *testing.T) {
 	sm.Close()
 }
 
+func TestUntilStream(t *testing.T) {
+	rs := NewRecordedStream()
+	us := NewCountStream(2, rs)
+
+	if rs == nil {
+		t.Fatal("unable to create recordedstream")
+	}
+
+	if us == nil {
+		t.Fatal("unable to create UntilStream")
+	}
+
+	defer rs.Close()
+	defer us.Close()
+
+	us.Subscribe(func(data interface{}, _ *Sub) {
+		_, ok := data.([]interface{})
+		if !ok {
+			t.Fatal("Data received is not a byte splice:", data)
+		}
+	})
+
+	rs.Write([]byte("Wonder"))
+	rs.Write([]byte("ful"))
+	rs.Write([]byte("!!"))
+
+}
+
 func TestRecordStream(t *testing.T) {
 	rs := NewRecordedStream()
 

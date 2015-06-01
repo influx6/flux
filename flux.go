@@ -160,7 +160,7 @@ func (f *SecureStack) Splice(begin, end int) []interface{} {
 	ms := f.listeners[begin:end]
 	f.lock.RUnlock()
 	var dup []interface{}
-	copy(dup, ms)
+	dup = append(dup, ms...)
 	return dup
 }
 

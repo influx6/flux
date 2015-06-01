@@ -32,6 +32,19 @@ type (
 		Push()
 	}
 
+	//SizableStreamInterface defines a StreamInterface that can report its data size incase of buffers
+	SizableStreamInterface interface {
+		StreamInterface
+		Size() int
+	}
+
+	//SplicableStreamInterface defines a StreamInterface that can be spliced
+	//for its inner content
+	SplicableStreamInterface interface {
+		SizableStreamInterface
+		Splice(start, end int) interface{}
+	}
+
 	//RecordedStreamInterface defines the interface method for time streams
 	RecordedStreamInterface interface {
 		StreamInterface
@@ -57,6 +70,14 @@ type (
 		StreamInterface
 		buf    *SecureStack
 		stamps *SecureMap
+	}
+
+	//UntilStream provides a stream taking a function that ejects depending
+	//on a condition
+	UntilStream struct {
+		SizableStreamInterface
+		base   SplicableStreamInterface
+		action func(SplicableStreamInterface, *UntilStream)
 	}
 
 	//WrapByteStream provides a ByteStream wrapped around a reader
@@ -250,6 +271,16 @@ func (b *BaseStream) OnClosed() ActionInterface {
 	return b.closed.Wrap()
 }
 
+//Splice of the buffer,BaseStream has no buffer
+func (b *BaseStream) Splice(s, e int) interface{} {
+	return nil
+}
+
+//Size of the buffer,BaseStream has no buffer
+func (b *BaseStream) Size() int {
+	return 0
+}
+
 //Push in the case of an internal pushstream spins up a new go-routine for
 //handling incoming data into the blocking channel and for pull stream
 //pushes out the data in the channel,only used this when dealing with
@@ -423,6 +454,93 @@ func NewByteStream() *ByteStream {
 		NewBaseStream(),
 		new(bytes.Buffer),
 	}
+}
+
+//NewCountStream returns a UntilStream that counts to a set limit and
+//then collects and publishes that list of data
+func NewCountStream(limit int, base SplicableStreamInterface) *UntilStream {
+	return NewUntilStream(base, func(b SplicableStreamInterface, u *UntilStream) {
+		if b.Size() >= limit {
+			bu := b.Splice(0, b.Size())
+			if bu != nil {
+				u.SuperEmit(bu)
+			}
+		}
+
+	})
+}
+
+//NewUntilStream returns a new stream instance of UntilStream
+func NewUntilStream(base SplicableStreamInterface, fx func(SplicableStreamInterface, *UntilStream)) *UntilStream {
+	us := &UntilStream{
+		NewBaseStream(),
+		base,
+		fx,
+	}
+
+	sub := base.Subscribe(func(b interface{}, _ *Sub) {
+		us.action(us.base, us)
+	})
+
+	us.OnClosed().WhenOnly(func(_ interface{}) {
+		defer sub.Close()
+	})
+
+	return us
+}
+
+//Write reads the data in the byte slice into the buffer while notifying
+//listeners
+func (b *UntilStream) Write(data []byte) (int, error) {
+	return b.base.Write(data)
+}
+
+//Read reads the last data from the internal buf into the provided slice
+func (b *UntilStream) Read(data []byte) (int, error) {
+	return b.base.Read(data)
+}
+
+//Emit pass the command to the underline base stream
+func (b *UntilStream) Emit(data interface{}) (int, error) {
+	return b.base.Emit(data)
+}
+
+//SuperEmit pass the command to the UntilStream itself
+func (b *UntilStream) SuperEmit(data interface{}) (int, error) {
+	return b.SizableStreamInterface.Emit(data)
+}
+
+//Splice returns the a slice of the buffer
+// func (b *UntilStream) Splice(start, end int) interface{} {
+// 	return b.S
+// }
+
+//Splice returns the a slice of the buffer
+func (b *ByteStream) Splice(start, end int) interface{} {
+	sz := b.Size()
+
+	if end > sz || end < 0 {
+		end = sz
+	}
+
+	bu := make([]byte, end)
+	b.buf.Read(bu)
+	return bu
+}
+
+//Size returns the count of record data in the stream
+func (b *ByteStream) Size() int {
+	return b.buf.Len()
+}
+
+//Size returns the count of record data in the stream
+func (b *RecordedStream) Size() int {
+	return b.buf.Size()
+}
+
+//Splice returns the a slice of the buffer
+func (b *RecordedStream) Splice(start, end int) interface{} {
+	return b.buf.Splice(start, end)
 }
 
 //Stamp returns the time when a particular data of a particular index was added
