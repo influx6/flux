@@ -23,6 +23,49 @@ type SwitchInterface interface {
 	WhenOff() ActionInterface
 }
 
+//WaitGen is a nice way of creating regenerative timers for use
+//wait timers are once timers, once they are clocked out they are of no more use,to allow their nature which has its benefits we get to create WaitGen that generates a new once once a wait gen is over
+type WaitGen struct {
+	current WaitInterface
+	gen     func() WaitInterface
+}
+
+//Make returns a new WaitInterface or returns the current once
+func (w *WaitGen) Make() WaitInterface {
+	if w.current != nil {
+		return w.current
+	}
+	wt := w.gen()
+	wt.Then().WhenOnly(func(_ interface{}) {
+		w.current = nil
+	})
+	return wt
+}
+
+//NewTimeWaitGen returns a wait generator making a timewaiter
+func NewTimeWaitGen(steps int, ms time.Duration, init func(WaitInterface)) *WaitGen {
+	return &WaitGen{
+		nil,
+		func() WaitInterface {
+			nt := NewTimeWait(steps, ms)
+			init(nt)
+			return nt
+		},
+	}
+}
+
+//NewSimpleWaitGen returns a wait generator making a timewaiter
+func NewSimpleWaitGen(init func(WaitInterface)) *WaitGen {
+	return &WaitGen{
+		nil,
+		func() WaitInterface {
+			nt := NewWait()
+			init(nt)
+			return nt
+		},
+	}
+}
+
 //baseWait defines the base wait structure for all waiters
 type baseWait struct {
 	action ActionInterface

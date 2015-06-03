@@ -129,7 +129,7 @@ func TestUntilStream(t *testing.T) {
 
 func TestUntilStreamMix(t *testing.T) {
 	rs := NewRecordedStream()
-	us := MixCountStream(2, rs, func(pack interface{}) interface{} {
+	us := MixCountStream(3, rs, func(pack interface{}) interface{} {
 		d, ok := pack.([]interface{})
 
 		if !ok {
