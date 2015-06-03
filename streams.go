@@ -73,12 +73,16 @@ type (
 		stamps *SecureMap
 	}
 
+	//UntilFn represents the action of a UntilStream
+	UntilFn func(SplicableStreamInterface, *UntilStream)
+
 	//UntilStream provides a stream taking a function that ejects depending
 	//on a condition
 	UntilStream struct {
 		SizableStreamInterface
 		base   SplicableStreamInterface
-		action func(SplicableStreamInterface, *UntilStream)
+		action UntilFn
+		Forcer UntilFn
 	}
 
 	//WrapByteStream provides a ByteStream wrapped around a reader
@@ -476,6 +480,14 @@ func MixCountStream(limit int, base SplicableStreamInterface, mixfn func(b inter
 			}
 		}
 
+	}, func(b SplicableStreamInterface, u *UntilStream) {
+		bu := b.Splice(0, b.Size())
+		if bu != nil {
+			bum := mixfn(bu)
+			if bum != nil {
+				u.SuperEmit(bum)
+			}
+		}
 	})
 }
 
@@ -490,15 +502,21 @@ func NewCountStream(limit int, base SplicableStreamInterface) *UntilStream {
 			}
 		}
 
+	}, func(b SplicableStreamInterface, u *UntilStream) {
+		bu := b.Splice(0, b.Size())
+		if bu != nil {
+			u.SuperEmit(bu)
+		}
 	})
 }
 
 //NewUntilStream returns a new stream instance of UntilStream
-func NewUntilStream(base SplicableStreamInterface, fx func(SplicableStreamInterface, *UntilStream)) *UntilStream {
+func NewUntilStream(base SplicableStreamInterface, fx UntilFn, gx UntilFn) *UntilStream {
 	us := &UntilStream{
 		NewBaseStream(),
 		base,
 		fx,
+		gx,
 	}
 
 	sub := base.Subscribe(func(b interface{}, _ *Sub) {
@@ -510,6 +528,18 @@ func NewUntilStream(base SplicableStreamInterface, fx func(SplicableStreamInterf
 	})
 
 	return us
+}
+
+//Force provides a means of performing a brutforce action that is specified by the Forcer attribute
+func (b *UntilStream) Force() {
+	if b.Forcer != nil {
+		b.ForceWith(b.Forcer)
+	}
+}
+
+//ForceWith provides a means of performing a brutforce action
+func (b *UntilStream) ForceWith(fx func(SplicableStreamInterface, *UntilStream)) {
+	fx(b.base, b)
 }
 
 //Write reads the data in the byte slice into the buffer while notifying
