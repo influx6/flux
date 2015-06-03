@@ -156,14 +156,13 @@ func TestUntilStreamMix(t *testing.T) {
 		t.Fatal("unable to create UntilStream")
 	}
 
-	defer us.Close()
-	defer rs.Close()
+	// defer us.Close()
+	// defer rs.Close()
 
 	us.Subscribe(func(data interface{}, s *Sub) {
-		_, ok := data.([][]byte)
 		t.Logf("Subscription got: %+s", data)
-		if ok {
-			defer s.Close()
+		_, ok := data.([][]byte)
+		if !ok {
 			t.Fatal("Data received is not a byte splice [][]byte:", data)
 		}
 	})
@@ -173,6 +172,7 @@ func TestUntilStreamMix(t *testing.T) {
 	rs.Write([]byte("!!"))
 
 	rs.Write([]byte("Hello"))
+	rs.Write([]byte("!!"))
 	us.Force()
 }
 
