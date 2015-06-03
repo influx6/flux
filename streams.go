@@ -53,6 +53,13 @@ type (
 		Reply(func(interface{}, time.Time))
 	}
 
+	//UntilStreamInterface defines the interface method for until streams
+	UntilStreamInterface interface {
+		SizableStreamInterface
+		Force()
+		ForceWith(fx UntilFn)
+	}
+
 	//BaseStream defines a basic stream structure
 	BaseStream struct {
 		push   Pipe
@@ -538,7 +545,7 @@ func (b *UntilStream) Force() {
 }
 
 //ForceWith provides a means of performing a brutforce action
-func (b *UntilStream) ForceWith(fx func(SplicableStreamInterface, *UntilStream)) {
+func (b *UntilStream) ForceWith(fx UntilFn) {
 	fx(b.base, b)
 }
 
