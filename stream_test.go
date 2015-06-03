@@ -161,6 +161,7 @@ func TestUntilStreamMix(t *testing.T) {
 
 	us.Subscribe(func(data interface{}, s *Sub) {
 		_, ok := data.([][]byte)
+		t.Logf("Subscription got: %+s", data)
 		if ok {
 			defer s.Close()
 			t.Fatal("Data received is not a byte splice [][]byte:", data)
@@ -171,6 +172,8 @@ func TestUntilStreamMix(t *testing.T) {
 	rs.Write([]byte("ful"))
 	rs.Write([]byte("!!"))
 
+	rs.Write([]byte("Hello"))
+	us.Force()
 }
 
 func TestRecordStream(t *testing.T) {
