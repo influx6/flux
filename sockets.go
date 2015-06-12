@@ -1,9 +1,6 @@
 package flux
 
-import (
-	"runtime"
-	"sync"
-)
+import "sync"
 
 //SocketInterface defines member function rules
 type SocketInterface interface {
@@ -24,7 +21,6 @@ type SocketInterface interface {
 type Pipe interface {
 	SocketInterface
 	PushStream()
-	Wait()
 }
 
 //Sub provides a nice clean subscriber connection for socket
@@ -82,17 +78,12 @@ func (s *Socket) Close() {
 	close(s.channel)
 	go func() {
 		<-s.closer
-		// s.listeners.lock.Lock()
 		s.ClearListeners()
-		// s.listeners.lock.Unlock()
 	}()
 }
 
 //Subscribe returns a subscriber
 func (s *Socket) Subscribe(fx func(interface{}, *Sub)) *Sub {
-	// if s.bufferup {
-	// 	close(s.begin)
-	// }
 	return NewSub(s, fx)
 }
 
@@ -146,9 +137,7 @@ func NewSocket(size int, buf bool) *Socket {
 //Push creates a push-like socket
 type Push struct {
 	*Socket
-	pin  *Sub
-	wait *sync.WaitGroup
-	// closer chan struct{}
+	pin *Sub
 }
 
 //Pull creates a pull-like socket
@@ -186,35 +175,24 @@ func (p *Push) Close() {
 	p.Socket.Close()
 }
 
-//Wait caues the socket to wait till its done
-func (p *Push) Wait() {
-	p.wait.Wait()
-}
-
 //PushStream uses the range iterator over the terminal
 func (p *Pull) PushStream() {
 	size := p.Push.Size()
 
 	if size > 0 {
-		p.wait.Add(1)
 		dx := <-p.Push.Socket.channel
 		p.listeners.Each(dx)
-		p.wait.Done()
-		runtime.Gosched()
 		p.PushStream()
 	}
 }
 
 //PushStream uses the range iterator over the terminal
 func (p *Push) PushStream() {
-	p.wait.Add(1)
 	go func() {
 		// <-p.begin
 		for dx := range p.Socket.channel {
 			p.listeners.Each(dx)
-			runtime.Gosched()
 		}
-		p.wait.Done()
 		p.when.Do(func() {
 			close(p.closer)
 		})
@@ -231,7 +209,6 @@ func PullSocket(buff int) *Pull {
 		&Push{
 			NewSocket(buff, false),
 			nil,
-			new(sync.WaitGroup),
 		},
 	}
 
@@ -247,7 +224,6 @@ func PushSocket(buff int) *Push {
 	ps := &Push{
 		NewSocket(buff, false),
 		nil,
-		new(sync.WaitGroup),
 	}
 	ps.PushStream()
 	return ps
@@ -261,7 +237,6 @@ func PushSocketWith(sock SocketInterface) *Push {
 		sock.Subscribe(func(v interface{}, _ *Sub) {
 			su.Emit(v)
 		}),
-		new(sync.WaitGroup),
 	}
 
 	ps.PushStream()
@@ -277,7 +252,6 @@ func PullSocketWith(size int, sock SocketInterface) *Pull {
 			sock.Subscribe(func(v interface{}, _ *Sub) {
 				su.Emit(v)
 			}),
-			new(sync.WaitGroup),
 		},
 	}
 
@@ -293,7 +267,6 @@ func DoPushSocket(sock SocketInterface, fn func(f interface{}, sock SocketInterf
 	ps := &Push{
 		su,
 		nil,
-		new(sync.WaitGroup),
 	}
 
 	ps.pin = sock.Subscribe(func(v interface{}, _ *Sub) {
@@ -311,7 +284,6 @@ func DoPullSocket(size int, sock SocketInterface, fn func(f interface{}, sock So
 		&Push{
 			su,
 			nil,
-			new(sync.WaitGroup),
 		},
 	}
 
