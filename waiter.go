@@ -87,6 +87,7 @@ type TimeWait struct {
 	*baseWait
 	closer chan struct{}
 	hits   int64
+	max    int
 	ms     time.Duration
 	doonce *sync.Once
 }
@@ -106,6 +107,7 @@ func NewTimeWait(max int, duration time.Duration) *TimeWait {
 		newBaseWait(),
 		make(chan struct{}),
 		int64(max),
+		max,
 		duration,
 		new(sync.Once),
 	}
@@ -155,7 +157,7 @@ func (w *TimeWait) Count() int {
 
 //Add increments the lock state to the lock counter unless its already unlocked
 func (w *TimeWait) Add() {
-	if w.Count() < 0 {
+	if w.Count() < 0 || w.Count() >= w.max {
 		return
 	}
 
