@@ -80,12 +80,15 @@ func (r *ResetTimer) handle() {
 		for {
 			select {
 			case <-r.reset:
+				log.Printf("ResetTimer: reseting timer by duration %+s", r.duration)
 				threshold = r.makeTime()
 			case <-threshold:
 				atomic.StoreInt64(&r.state, 0)
+				log.Printf("ResetTimer: timer expired with duration %+s", r.duration)
 				r.done()
 				break resetloop
 			case <-r.kill:
+				log.Printf("ResetTimer: timer killed using duration %+s", r.duration)
 				atomic.StoreInt64(&r.state, 0)
 				break resetloop
 			}
