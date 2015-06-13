@@ -87,7 +87,6 @@ func (r *ResetTimer) handle() {
 				break resetloop
 			case <-r.kill:
 				atomic.StoreInt64(&r.state, 0)
-				r.done()
 				break resetloop
 			}
 		}
