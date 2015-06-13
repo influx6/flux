@@ -29,7 +29,7 @@ type ResetTimer struct {
 
 //NewResetTimer returns a new reset timer
 func NewResetTimer(init func(), done func(), d time.Duration) *ResetTimer {
-	return &ResetTimer{
+	rs := &ResetTimer{
 		reset:    make(chan struct{}),
 		kill:     make(chan struct{}),
 		duration: d,
@@ -38,6 +38,10 @@ func NewResetTimer(init func(), done func(), d time.Duration) *ResetTimer {
 		done:     done,
 		state:    1,
 	}
+
+	rs.init()
+	rs.handle()
+	return rs
 }
 
 //Add reset the timer threshold
@@ -50,7 +54,7 @@ func (r *ResetTimer) Add() {
 	if state <= 0 {
 		atomic.StoreInt64(&r.state, 1)
 		r.init()
-		go r.handle()
+		r.handle()
 	} else {
 		r.reset <- struct{}{}
 	}
@@ -70,21 +74,24 @@ func (r *ResetTimer) makeTime() <-chan time.Time {
 }
 
 func (r *ResetTimer) handle() {
-	threshold := r.makeTime()
-resetloop:
-	for {
-		select {
-		case <-r.reset:
-			threshold = r.makeTime()
-		case <-threshold:
-			atomic.StoreInt64(&r.state, 0)
-			r.done()
-			break resetloop
-		case <-r.kill:
-			atomic.StoreInt64(&r.state, 0)
-			break resetloop
+	go func() {
+		threshold := r.makeTime()
+	resetloop:
+		for {
+			select {
+			case <-r.reset:
+				threshold = r.makeTime()
+			case <-threshold:
+				atomic.StoreInt64(&r.state, 0)
+				r.done()
+				break resetloop
+			case <-r.kill:
+				atomic.StoreInt64(&r.state, 0)
+				break resetloop
+			}
 		}
-	}
+
+	}()
 }
 
 //SwitchInterface defines a flux.Switch interface method definition

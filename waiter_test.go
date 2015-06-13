@@ -6,6 +6,26 @@ import (
 	"time"
 )
 
+func TestResetTimer(t *testing.T) {
+	ws := new(sync.WaitGroup)
+	rs := NewResetTimer(func() {
+		t.Log("Initing reset")
+	}, func() {
+		t.Log("Finishing reset")
+		ws.Done()
+	}, time.Duration(600)*time.Millisecond)
+
+	ws.Add(2)
+
+	go func() {
+		time.Sleep(time.Duration(650) * time.Millisecond)
+		rs.Add()
+	}()
+
+	ws.Wait()
+	rs.Close()
+}
+
 func TestOneTimeWaiter(t *testing.T) {
 	ms := time.Duration(3) * time.Second
 
