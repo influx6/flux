@@ -44,6 +44,16 @@ func NewResetTimer(init func(), done func(), d time.Duration) *ResetTimer {
 	return rs
 }
 
+//Break stops the timer
+func (r *ResetTimer) Break() {
+	defer func() {
+		r.do = new(sync.Once)
+		r.kill = make(chan struct{})
+		r.reset = make(chan struct{})
+	}()
+	r.Close()
+}
+
 //Add reset the timer threshold
 func (r *ResetTimer) Add() {
 	if r.do == nil {
