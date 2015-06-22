@@ -1,6 +1,9 @@
 package flux
 
-import "sync"
+import (
+	"log"
+	"sync"
+)
 
 //SocketInterface defines member function rules
 type SocketInterface interface {
@@ -190,12 +193,14 @@ func (p *Pull) PushStream() {
 func (p *Push) PushStream() {
 	go func() {
 		// <-p.begin
+		log.Println("Starting PushStream!")
 		for dx := range p.Socket.channel {
 			p.listeners.Each(dx)
 		}
 		p.when.Do(func() {
 			close(p.closer)
 		})
+		log.Println("Closing PushStream!")
 	}()
 }
 
