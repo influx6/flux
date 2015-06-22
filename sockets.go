@@ -193,7 +193,6 @@ func (p *Pull) PushStream() {
 func (p *Push) PushStream() {
 	go func() {
 		// <-p.begin
-		log.Println("Starting PushStream!")
 		for dx := range p.Socket.channel {
 			p.listeners.Each(dx)
 		}
