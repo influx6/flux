@@ -3,6 +3,7 @@ package flux
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 )
 
 //SocketInterface defines member function rules
@@ -58,12 +59,13 @@ func NewSub(sock SocketInterface, fn func(interface{}, *Sub)) *Sub {
 
 //Socket is the base structure for all data flow communication
 type Socket struct {
-	channel    chan interface{}
-	closer     chan struct{}
-	listeners  *SingleStack
-	bufferSize int
-	bufferup   bool
-	when       *sync.Once
+	channel     chan interface{}
+	closer      chan struct{}
+	listeners   *SingleStack
+	bufferSize  int
+	bufferup    bool
+	when        *sync.Once
+	closedState int64
 }
 
 //PoolSize returns the size of data in the channel
@@ -78,7 +80,14 @@ func (s *Socket) ClearListeners() {
 
 //Close closes the socket internal channel and clears its listener list
 func (s *Socket) Close() {
-	close(s.channel)
+	state := int(atomic.LoadInt64(&s.closedState))
+
+	if state > 0 {
+		return
+	}
+
+	defer close(s.channel)
+	atomic.StoreInt64(&s.closedState, 1)
 	go func() {
 		<-s.closer
 		s.ClearListeners()
@@ -134,6 +143,7 @@ func NewSocket(size int, buf bool) *Socket {
 		size,
 		buf,
 		new(sync.Once),
+		0,
 	}
 }
 
