@@ -58,6 +58,11 @@ var (
 	}
 )
 
+//NewIdentityStream  returns new StackStream
+func NewIdentityStream() StackStreamers {
+	return NewStackStream(StackableIdentity)
+}
+
 //StreamReader streams from a reader,hence all values are replaced by the data in the io.Reader
 func StreamReader(w io.Reader) (s StackStreamers) {
 	s = NewStackStream(StackableIdentity)
