@@ -39,9 +39,13 @@ func NewResetTimer(init func(), done func(), d time.Duration) *ResetTimer {
 		state:    1,
 	}
 
-	rs.init()
-	rs.handle()
 	return rs
+}
+
+//Begin starts up the ResetTimer
+func (r *ResetTimer) Begin() {
+	r.init()
+	r.handle()
 }
 
 //Break stops the timer

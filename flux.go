@@ -120,6 +120,11 @@ func (m *SecureMap) Get(key interface{}) interface{} {
 
 //Set a key with value
 func (m *SecureMap) Set(key, value interface{}) {
+
+	if _, ok := m.data[key]; ok {
+		return
+	}
+
 	m.lock.Lock()
 	m.data[key] = value
 	m.lock.Unlock()
