@@ -1,7 +1,6 @@
 package flux
 
 import (
-	"log"
 	"sync"
 	"sync/atomic"
 )
@@ -209,7 +208,6 @@ func (p *Push) PushStream() {
 		p.when.Do(func() {
 			close(p.closer)
 		})
-		log.Println("Closing PushStream!")
 	}()
 }
 

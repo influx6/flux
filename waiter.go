@@ -25,10 +25,12 @@ type ResetTimer struct {
 	init     func()
 	done     func()
 	state    int64
+	started  int64
+	runint   bool
 }
 
 //NewResetTimer returns a new reset timer
-func NewResetTimer(init func(), done func(), d time.Duration) *ResetTimer {
+func NewResetTimer(init func(), done func(), d time.Duration, runinit bool) *ResetTimer {
 	rs := &ResetTimer{
 		reset:    make(chan struct{}),
 		kill:     make(chan struct{}),
@@ -37,6 +39,8 @@ func NewResetTimer(init func(), done func(), d time.Duration) *ResetTimer {
 		init:     init,
 		done:     done,
 		state:    1,
+		started:  0,
+		runint:   runinit,
 	}
 
 	return rs
@@ -44,7 +48,11 @@ func NewResetTimer(init func(), done func(), d time.Duration) *ResetTimer {
 
 //Begin starts up the ResetTimer
 func (r *ResetTimer) Begin() {
-	r.init()
+	ro := int(atomic.LoadInt64(&r.started))
+	if ro <= 0 && r.runint {
+		r.init()
+		atomic.StoreInt64(&r.started, 1)
+	}
 	r.handle()
 }
 
