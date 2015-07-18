@@ -86,6 +86,7 @@ func (r *ResetTimer) Add() {
 func (r *ResetTimer) Close() {
 	defer func() { r.do = nil }()
 	r.do.Do(func() {
+		atomic.StoreInt64(&r.started, 0)
 		close(r.kill)
 		close(r.reset)
 	})

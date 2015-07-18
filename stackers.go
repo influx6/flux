@@ -160,6 +160,9 @@ func NewStack(fn Stackable, root Stacks) (s *Stack) {
 //Emit sends a data into the stack and returns this stack
 //returned value
 func (s *Stack) Emit(b interface{}) interface{} {
+	if b == nil {
+		return nil
+	}
 	var res interface{}
 	state := atomic.LoadInt64(&s.active)
 	if state > 0 {
@@ -176,13 +179,18 @@ func (s *Stack) Emit(b interface{}) interface{} {
 //Mux lets you mutate the next passed data to the next
 //stack,that is this stack return value is the next stacks input
 func (s *Stack) Mux(b interface{}) interface{} {
+	if b == nil {
+		return nil
+	}
 	var res interface{}
 	state := atomic.LoadInt64(&s.active)
 	if state > 0 {
 		res = s.wrap.Fn(b, s)
 		if s.wrap.next != nil {
 			if s.wrap.next.owner != nil {
-				s.wrap.next.owner.Emit(res)
+				if res != nil {
+					s.wrap.next.owner.Emit(res)
+				}
 			}
 		}
 	}
@@ -222,6 +230,14 @@ func (s *Stack) Stack(fn Stackable) Stacks {
 func LogStack(s Stacks) Stacks {
 	return s.Stack(func(data interface{}, _ Stacks) interface{} {
 		log.Printf("LogStack: %+s", data)
+		return data
+	})
+}
+
+//LogHeader takes a stack and logs all input from it
+func LogHeader(s Stacks, header string) Stacks {
+	return s.Stack(func(data interface{}, _ Stacks) interface{} {
+		log.Printf(header, data)
 		return data
 	})
 }
