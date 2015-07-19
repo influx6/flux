@@ -13,9 +13,8 @@ func TestResetTimer(t *testing.T) {
 	}, func() {
 		t.Log("Finishing reset")
 		ws.Done()
-	}, time.Duration(600)*time.Millisecond, true)
+	}, time.Duration(600)*time.Millisecond, true, true)
 
-	rs.Begin()
 	ws.Add(2)
 
 	go func() {

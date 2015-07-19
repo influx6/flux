@@ -26,11 +26,10 @@ type ResetTimer struct {
 	done     func()
 	state    int64
 	started  int64
-	runint   bool
 }
 
 //NewResetTimer returns a new reset timer
-func NewResetTimer(init func(), done func(), d time.Duration, runinit bool) *ResetTimer {
+func NewResetTimer(init func(), done func(), d time.Duration, run, boot bool) *ResetTimer {
 	rs := &ResetTimer{
 		reset:    make(chan struct{}),
 		kill:     make(chan struct{}),
@@ -40,56 +39,59 @@ func NewResetTimer(init func(), done func(), d time.Duration, runinit bool) *Res
 		done:     done,
 		state:    1,
 		started:  0,
-		runint:   runinit,
+	}
+
+	if run {
+		rs.RunInit()
+	}
+
+	if boot {
+		rs.handle()
 	}
 
 	return rs
 }
 
-//Begin starts up the ResetTimer
-func (r *ResetTimer) Begin() {
-	ro := int(atomic.LoadInt64(&r.started))
-	if ro <= 0 && r.runint {
+//RunInit runs the init function
+func (r *ResetTimer) RunInit() {
+	if r.init != nil {
 		r.init()
-		atomic.StoreInt64(&r.started, 1)
 	}
-	r.handle()
-}
-
-//Break stops the timer
-func (r *ResetTimer) Break() {
-	defer func() {
-		r.do = new(sync.Once)
-		r.kill = make(chan struct{})
-		r.reset = make(chan struct{})
-	}()
-	r.Close()
 }
 
 //Add reset the timer threshold
 func (r *ResetTimer) Add() {
-	if r.do == nil {
-		return
-	}
-
 	state := atomic.LoadInt64(&r.state)
-	if state <= 0 {
-		atomic.StoreInt64(&r.state, 1)
-		r.init()
-		r.handle()
-	} else {
-		r.reset <- struct{}{}
+	{
+		log.Printf("Waiter checking State! State at %d", state)
+		if state > 0 {
+			r.reset <- struct{}{}
+		} else {
+			atomic.StoreInt64(&r.state, 1)
+			{
+				r.RunInit()
+				r.handle()
+			}
+			atomic.StoreInt64(&r.started, 1)
+		}
 	}
 }
 
 //Close closes this timer
 func (r *ResetTimer) Close() {
-	defer func() { r.do = nil }()
-	r.do.Do(func() {
-		atomic.StoreInt64(&r.started, 0)
-		close(r.kill)
-		close(r.reset)
-	})
+	state := atomic.LoadInt64(&r.started)
+	{
+		if state > 0 {
+			close(r.kill)
+			close(r.reset)
+		}
+	}
+	atomic.StoreInt64(&r.state, 0)
+	{
+		r.kill = make(chan struct{})
+		r.reset = make(chan struct{})
+	}
+	atomic.StoreInt64(&r.started, 0)
 }
 
 func (r *ResetTimer) makeTime() <-chan time.Time {
