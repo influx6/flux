@@ -37,12 +37,12 @@ func NewResetTimer(init func(), done func(), d time.Duration, run, boot bool) *R
 		do:       new(sync.Once),
 		init:     init,
 		done:     done,
-		state:    1,
-		started:  0,
+		state:    0,
+		started:  1,
 	}
 
 	if run {
-		rs.RunInit()
+		rs.runInit()
 	}
 
 	if boot {
@@ -53,7 +53,7 @@ func NewResetTimer(init func(), done func(), d time.Duration, run, boot bool) *R
 }
 
 //RunInit runs the init function
-func (r *ResetTimer) RunInit() {
+func (r *ResetTimer) runInit() {
 	if r.init != nil {
 		r.init()
 	}
@@ -61,36 +61,36 @@ func (r *ResetTimer) RunInit() {
 
 //Add reset the timer threshold
 func (r *ResetTimer) Add() {
-	state := atomic.LoadInt64(&r.state)
-	{
-		log.Printf("Waiter checking State! State at %d", state)
-		if state > 0 {
-			r.reset <- struct{}{}
-		} else {
-			atomic.StoreInt64(&r.state, 1)
-			{
-				r.RunInit()
-				r.handle()
-			}
-			atomic.StoreInt64(&r.started, 1)
-		}
+	startd := int(atomic.LoadInt64(&r.started))
+	state := int(atomic.LoadInt64(&r.state))
+
+	if startd <= 0 {
+		r.kill = make(chan struct{})
+		r.reset = make(chan struct{})
+	}
+
+	log.Printf("Waiter checking State! State at %d Started %d", state, startd)
+
+	if state > 0 {
+		r.reset <- struct{}{}
+	} else {
+		r.runInit()
+		r.handle()
+		atomic.StoreInt64(&r.state, 1)
+		atomic.StoreInt64(&r.started, 1)
 	}
 }
 
 //Close closes this timer
 func (r *ResetTimer) Close() {
 	state := atomic.LoadInt64(&r.started)
-	{
-		if state > 0 {
-			close(r.kill)
-			close(r.reset)
-		}
+
+	if state > 0 {
+		close(r.kill)
+		close(r.reset)
 	}
+
 	atomic.StoreInt64(&r.state, 0)
-	{
-		r.kill = make(chan struct{})
-		r.reset = make(chan struct{})
-	}
 	atomic.StoreInt64(&r.started, 0)
 }
 
@@ -108,9 +108,9 @@ func (r *ResetTimer) handle() {
 				log.Printf("ResetTimer: reseting timer by duration %+s", r.duration)
 				threshold = r.makeTime()
 			case <-threshold:
-				atomic.StoreInt64(&r.state, 0)
 				log.Printf("ResetTimer: timer expired with duration %+s", r.duration)
 				r.done()
+				atomic.StoreInt64(&r.state, 0)
 				break resetloop
 			case <-r.kill:
 				log.Printf("ResetTimer: timer killed using duration %+s", r.duration)
