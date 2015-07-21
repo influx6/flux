@@ -8,12 +8,16 @@ import (
 
 type (
 
+	//HalfStackable defines a stackable function type that can return a value
+	HalfStackable func(interface{})
+
 	//Stackable defines a stackable function type that can return a value
 	Stackable func(interface{}, Stacks) interface{}
 
 	//Stacks provides the finite definition of function stacks
 	Stacks interface {
 		Stack(Stackable) Stacks
+		Listen(HalfStackable) Stacks
 		Unstack()
 		Emit(interface{}) interface{}
 		Mux(interface{}) interface{}
@@ -214,6 +218,14 @@ func (s *Stack) Unstack() {
 //getWrap returns the stacks wrapper
 func (s *Stack) getWrap() *StackWrap {
 	return s.wrap
+}
+
+//Listen builds a new stack from this previous stack
+func (s *Stack) Listen(fn HalfStackable) Stacks {
+	return s.Stack(func(b interface{}, _ Stacks) interface{} {
+		fn(b)
+		return b
+	})
 }
 
 //Stack builds a new stack from this previous stack

@@ -26,6 +26,7 @@ type ResetTimer struct {
 	done     func()
 	state    int64
 	started  int64
+	lock     *sync.Mutex
 }
 
 //NewResetTimer returns a new reset timer
@@ -39,6 +40,7 @@ func NewResetTimer(init func(), done func(), d time.Duration, run, boot bool) *R
 		done:     done,
 		state:    0,
 		started:  1,
+		lock:     new(sync.Mutex),
 	}
 
 	if run {
@@ -61,11 +63,16 @@ func (r *ResetTimer) runInit() {
 
 //Add reset the timer threshold
 func (r *ResetTimer) Add() {
-	startd := int(atomic.LoadInt64(&r.started))
+	r.lock.Lock()
+	defer r.lock.Unlock()
 	state := int(atomic.LoadInt64(&r.state))
+	startd := int(atomic.LoadInt64(&r.started))
 
-	if startd <= 0 {
+	if r.kill == nil {
 		r.kill = make(chan struct{})
+	}
+
+	if r.reset == nil {
 		r.reset = make(chan struct{})
 	}
 
@@ -83,9 +90,15 @@ func (r *ResetTimer) Add() {
 
 //Close closes this timer
 func (r *ResetTimer) Close() {
+	r.lock.Lock()
+	defer r.lock.Unlock()
 	state := atomic.LoadInt64(&r.started)
 
 	if state > 0 {
+		defer func() {
+			r.kill = nil
+			r.reset = nil
+		}()
 		close(r.kill)
 		close(r.reset)
 	}
@@ -101,10 +114,14 @@ func (r *ResetTimer) makeTime() <-chan time.Time {
 func (r *ResetTimer) handle() {
 	go func() {
 		threshold := r.makeTime()
+
+		reset := r.reset
+		kill := r.kill
+
 	resetloop:
 		for {
 			select {
-			case <-r.reset:
+			case <-reset:
 				log.Printf("ResetTimer: reseting timer by duration %+s", r.duration)
 				threshold = r.makeTime()
 			case <-threshold:
@@ -112,7 +129,7 @@ func (r *ResetTimer) handle() {
 				r.done()
 				atomic.StoreInt64(&r.state, 0)
 				break resetloop
-			case <-r.kill:
+			case <-kill:
 				log.Printf("ResetTimer: timer killed using duration %+s", r.duration)
 				atomic.StoreInt64(&r.state, 0)
 				break resetloop
