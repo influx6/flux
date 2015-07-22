@@ -31,6 +31,7 @@ type WhileTicker struct {
 	Duration time.Duration
 	signals  chan struct{}
 	initd    int64
+	reset    int64
 	closed   int64
 }
 
@@ -46,19 +47,28 @@ func (w *WhileTicker) Stop() {
 		return
 	}
 	atomic.StoreInt64(&w.initd, 0)
+	atomic.StoreInt64(&w.reset, 0)
 	atomic.StoreInt64(&w.closed, 1)
 	w.signals = nil
 }
 
+//Skip begins the ticker
+func (w *WhileTicker) Skip() {
+	atomic.StoreInt64(&w.initd, 1)
+}
+
 //Start begins the ticker
 func (w *WhileTicker) Start() {
+
 	cs := int(atomic.LoadInt64(&w.closed))
+
 	if cs > 0 {
 		w.signals = make(chan struct{})
 		atomic.StoreInt64(&w.closed, 0)
 	}
 
 	state := atomic.LoadInt64(&w.initd)
+
 	if state > 0 {
 		return
 	}
@@ -68,6 +78,13 @@ func (w *WhileTicker) Start() {
 	GoDefer("WhileTickerLoop", func() {
 	tickloop:
 		for {
+
+			rs := int(atomic.LoadInt64(&w.reset))
+
+			if rs > 0 {
+				atomic.StoreInt64(&w.reset, 0)
+				continue
+			}
 
 			end := atomic.LoadInt64(&w.initd)
 
@@ -87,7 +104,13 @@ func (w *WhileTicker) Start() {
 
 //While returns a new WhileTicker instance
 func While(ms time.Duration) *WhileTicker {
-	return &WhileTicker{Duration: ms, signals: make(chan struct{}), initd: 0, closed: 0}
+	return &WhileTicker{
+		Duration: ms,
+		signals:  make(chan struct{}),
+		initd:    0,
+		closed:   0,
+		reset:    0,
+	}
 }
 
 //ResetTimer runs a timer and performs an action
