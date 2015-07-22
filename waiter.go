@@ -54,7 +54,7 @@ func (w *WhileTicker) Stop() {
 
 //Skip begins the ticker
 func (w *WhileTicker) Skip() {
-	atomic.StoreInt64(&w.initd, 1)
+	atomic.StoreInt64(&w.reset, 1)
 }
 
 //Start begins the ticker
