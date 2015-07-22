@@ -1,10 +1,36 @@
 package flux
 
 import (
+	"log"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestWhileTicker(t *testing.T) {
+	w := While(2 * time.Second)
+	w.Start()
+
+	ws := new(sync.WaitGroup)
+	ws.Add(2)
+
+	count := 0
+	GoDefer("WaitTickerTest", func() {
+		for w.Signals() != nil {
+			select {
+			case <-w.Signals():
+				t.Logf("Received Signal %d", count)
+				count++
+				ws.Done()
+			}
+		}
+		log.Println("closing loop")
+	})
+
+	ws.Wait()
+	w.Stop()
+
+}
 
 func TestResetTimer(t *testing.T) {
 	ws := new(sync.WaitGroup)

@@ -1,6 +1,7 @@
 package flux
 
 import (
+	"errors"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -14,6 +15,79 @@ type WaitInterface interface {
 	Count() int
 	Flush()
 	Then() ActionInterface
+}
+
+var (
+	//ErrBadState stands for a struct in a bad state
+	ErrBadState = errors.New("")
+)
+
+/*WhileTicker provides a time.After derivative with
+**Important**
+When using WhileTicker signal channel is built for use in a select/forselect loop
+ensure you as such.
+*/
+type WhileTicker struct {
+	Duration time.Duration
+	signals  chan struct{}
+	initd    int64
+	closed   int64
+}
+
+//Signals return the signal channel use for signal a clock
+func (w *WhileTicker) Signals() chan struct{} {
+	return w.signals
+}
+
+//Stop begins the ticker
+func (w *WhileTicker) Stop() {
+	state := atomic.LoadInt64(&w.initd)
+	if state <= 0 {
+		return
+	}
+	atomic.StoreInt64(&w.initd, 0)
+	atomic.StoreInt64(&w.closed, 1)
+	w.signals = nil
+}
+
+//Start begins the ticker
+func (w *WhileTicker) Start() {
+	cs := int(atomic.LoadInt64(&w.closed))
+	if cs > 0 {
+		w.signals = make(chan struct{})
+		atomic.StoreInt64(&w.closed, 0)
+	}
+
+	state := atomic.LoadInt64(&w.initd)
+	if state > 0 {
+		return
+	}
+
+	atomic.StoreInt64(&w.initd, 1)
+
+	GoDefer("WhileTickerLoop", func() {
+	tickloop:
+		for {
+
+			end := atomic.LoadInt64(&w.initd)
+
+			if end <= 0 {
+				break tickloop
+			}
+
+			time.Sleep(w.Duration)
+
+			// go func() {
+			w.signals <- struct{}{}
+			// }()
+		}
+	})
+
+}
+
+//While returns a new WhileTicker instance
+func While(ms time.Duration) *WhileTicker {
+	return &WhileTicker{Duration: ms, signals: make(chan struct{}), initd: 0, closed: 0}
 }
 
 //ResetTimer runs a timer and performs an action
