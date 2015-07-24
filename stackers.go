@@ -116,7 +116,7 @@ func (s *StackStream) Closed() Stacks {
 func (s *StackStream) Close() error {
 	defer s.closeNotifier.Close()
 	s.closeNotifier.Emit(true)
-	s.Close()
+	s.Stacks.Close()
 	return nil
 }
 
@@ -197,9 +197,11 @@ func (s *Stack) Emit(b interface{}) interface{} {
 	state := atomic.LoadInt64(&s.active)
 	if state > 0 {
 		res = s.wrap.Fn(b, s)
-		if s.wrap.next != nil {
-			if s.wrap.next.owner != nil {
-				_ = s.wrap.next.owner.Emit(b)
+		if s.wrap != nil {
+			if s.wrap.next != nil {
+				if s.wrap.next.owner != nil {
+					_ = s.wrap.next.owner.Emit(b)
+				}
 			}
 		}
 	}
@@ -220,10 +222,12 @@ func (s *Stack) Mux(b interface{}) interface{} {
 	state := atomic.LoadInt64(&s.active)
 	if state > 0 {
 		res = s.wrap.Fn(b, s)
-		if s.wrap.next != nil {
-			if s.wrap.next.owner != nil {
-				if res != nil {
-					s.wrap.next.owner.Emit(res)
+		if s.wrap != nil {
+			if s.wrap.next != nil {
+				if s.wrap.next.owner != nil {
+					if res != nil {
+						s.wrap.next.owner.Emit(res)
+					}
 				}
 			}
 		}

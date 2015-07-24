@@ -24,3 +24,27 @@ func GoDefer(title string, fx func()) {
 		fx()
 	}()
 }
+
+//Close provides a basic io.WriteCloser write method
+func (w *FuncWriter) Close() error {
+	w.fx = nil
+	return nil
+}
+
+//Write provides a basic io.Writer write method
+func (w *FuncWriter) Write(b []byte) (int, error) {
+	w.fx(b)
+	return len(b), nil
+}
+
+//NewFuncWriter returns a new function writer instance
+func NewFuncWriter(fx func([]byte)) *FuncWriter {
+	return &FuncWriter{fx}
+}
+
+type (
+	//FuncWriter provides a means of creation io.Writer on functions
+	FuncWriter struct {
+		fx func([]byte)
+	}
+)

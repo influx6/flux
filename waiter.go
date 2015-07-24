@@ -165,15 +165,17 @@ func (r *ResetTimer) Add() {
 	state := int(atomic.LoadInt64(&r.state))
 	startd := int(atomic.LoadInt64(&r.started))
 
+	log.Printf("Waiter checking State! State at %d Started %d", state, startd)
+
 	if r.kill == nil {
+		log.Printf("RestTimer kill is nil")
 		r.kill = make(chan struct{})
 	}
 
 	if r.reset == nil {
+		log.Printf("RestTimer reset is nil")
 		r.reset = make(chan struct{})
 	}
-
-	log.Printf("Waiter checking State! State at %d Started %d", state, startd)
 
 	if state > 0 {
 		r.reset <- struct{}{}
