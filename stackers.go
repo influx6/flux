@@ -16,19 +16,21 @@ type (
 
 	//Stacks provides the finite definition of function stacks
 	Stacks interface {
-		Stack(Stackable) Stacks
+		Stack(Stackable, bool) Stacks
 		Listen(HalfStackable) Stacks
 		Unstack()
 		Emit(interface{}) interface{}
 		Mux(interface{}) interface{}
 		getWrap() *StackWrap
+		Close() error
 	}
 
 	//StackWrap provides a single-layer two function binder
 	StackWrap struct {
-		Fn    Stackable
-		next  *StackWrap
-		owner Stacks
+		Fn      Stackable
+		next    *StackWrap
+		owner   Stacks
+		closefx func()
 	}
 
 	//Stack is the concrete definition of Stacks
@@ -44,7 +46,6 @@ type (
 		StreamWriter(io.Writer) Stacks
 		Write([]byte) (int, error)
 		Read([]byte) (int, error)
-		Close() error
 		Closed() Stacks
 	}
 
@@ -103,7 +104,7 @@ func (s *StackStream) StreamWriter(w io.Writer) Stacks {
 		}
 		_, _ = w.Write(buff)
 		return data
-	})
+	}, true)
 }
 
 //Closed returns a stack that is emitted when closed
@@ -113,23 +114,34 @@ func (s *StackStream) Closed() Stacks {
 
 //Close ends this stacks connections
 func (s *StackStream) Close() error {
+	defer s.closeNotifier.Close()
 	s.closeNotifier.Emit(true)
-	s.Unstack()
+	s.Close()
 	return nil
 }
 
 //NewStackStream returns a new stackstream
 func NewStackStream(mx Stackable) StackStreamers {
 	return &StackStream{
-		Stacks:        NewStack(mx, nil),
-		closeNotifier: NewStack(StackableIdentity, nil),
+		Stacks:        NewStack(mx, nil, true),
+		closeNotifier: NewStack(StackableIdentity, nil, true),
 	}
 }
 
-// //Die sets this wrapper as garbage
-// func (s *StackWrap) Free() {
-// 	s.Fn,s.owner = nil,nil
-// }
+//Close destroys the stackwrap
+func (s *StackWrap) Close() {
+	if s.next != nil {
+		if s.next.owner != nil {
+			s.next.owner.Close()
+		}
+	}
+	s.Fn = nil
+	s.owner = nil
+	if s.closefx != nil {
+		defer func() { s.closefx = nil }()
+		s.closefx()
+	}
+}
 
 //Unwrap unwraps a Stackwrap for release
 func (s *StackWrap) Unwrap() *StackWrap {
@@ -146,18 +158,28 @@ func (s *StackWrap) Rewrap(sc *StackWrap) *StackWrap {
 }
 
 //NewStackWrap returns a new Stackwrap
-func NewStackWrap(fn Stackable, own Stacks) *StackWrap {
-	return &StackWrap{Fn: fn, owner: own, next: nil}
+func NewStackWrap(fn Stackable, own Stacks, fx func()) *StackWrap {
+	return &StackWrap{Fn: fn, owner: own, next: nil, closefx: fx}
 }
 
 //NewStack returns a new stack
-func NewStack(fn Stackable, root Stacks) (s *Stack) {
+func NewStack(fn Stackable, root Stacks, closeOnRoot bool) (s *Stack) {
 	s = &Stack{
 		active: 1,
 		root:   root,
 	}
 
-	s.wrap = NewStackWrap(fn, s)
+	if closeOnRoot && root != nil {
+		cx := root.getWrap().closefx
+		root.getWrap().closefx = func() {
+			s.Close()
+			if cx != nil {
+				cx()
+			}
+		}
+	}
+
+	s.wrap = NewStackWrap(fn, s, nil)
 	return
 }
 
@@ -167,6 +189,10 @@ func (s *Stack) Emit(b interface{}) interface{} {
 	if b == nil {
 		return nil
 	}
+	if s.wrap == nil {
+		return nil
+	}
+
 	var res interface{}
 	state := atomic.LoadInt64(&s.active)
 	if state > 0 {
@@ -186,6 +212,10 @@ func (s *Stack) Mux(b interface{}) interface{} {
 	if b == nil {
 		return nil
 	}
+	if s.wrap == nil {
+		return nil
+	}
+
 	var res interface{}
 	state := atomic.LoadInt64(&s.active)
 	if state > 0 {
@@ -201,9 +231,21 @@ func (s *Stack) Mux(b interface{}) interface{} {
 	return res
 }
 
+//Close destroys the stack and any other chain it has
+func (s *Stack) Close() error {
+	if s.wrap == nil {
+		return nil
+	}
+
+	defer func() { s.wrap = nil }()
+	s.Unstack()
+	s.wrap.Close()
+	return nil
+}
+
 //Unstack disables and nullifies this stack
 func (s *Stack) Unstack() {
-	if s.root == nil {
+	if s.wrap == nil || s.root == nil {
 		return
 	}
 
@@ -225,15 +267,19 @@ func (s *Stack) Listen(fn HalfStackable) Stacks {
 	return s.Stack(func(b interface{}, _ Stacks) interface{} {
 		fn(b)
 		return b
-	})
+	}, true)
 }
 
-//Stack builds a new stack from this previous stack
-func (s *Stack) Stack(fn Stackable) Stacks {
-	if s.wrap.next != nil {
-		return s.wrap.next.owner.Stack(fn)
+//Stack builds a new stack from this previous stack, the connectClose defines whether you want the new Stack closed when its parent is closed,if false then we dont close it when the root closes
+func (s *Stack) Stack(fn Stackable, connectClose bool) Stacks {
+	if s.wrap == nil {
+		return nil
 	}
-	m := NewStack(fn, s)
+
+	if s.wrap.next != nil {
+		return s.wrap.next.owner.Stack(fn, connectClose)
+	}
+	m := NewStack(fn, s, connectClose)
 	s.wrap.next = m.wrap
 	return m
 }
@@ -243,7 +289,7 @@ func LogStack(s Stacks) Stacks {
 	return s.Stack(func(data interface{}, _ Stacks) interface{} {
 		log.Printf("LogStack: %+s", data)
 		return data
-	})
+	}, true)
 }
 
 //LogHeader takes a stack and logs all input from it
@@ -251,7 +297,7 @@ func LogHeader(s Stacks, header string) Stacks {
 	return s.Stack(func(data interface{}, _ Stacks) interface{} {
 		log.Printf(header, data)
 		return data
-	})
+	}, true)
 }
 
 //LogStackWith logs all input using a custom logger
@@ -259,5 +305,5 @@ func LogStackWith(s Stacks, l *log.Logger) Stacks {
 	return s.Stack(func(data interface{}, _ Stacks) interface{} {
 		l.Printf("LogStack: %+s", data)
 		return data
-	})
+	}, true)
 }

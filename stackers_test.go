@@ -14,17 +14,21 @@ func TestStackers(t *testing.T) {
 		}
 
 		return nm
-	}, nil)
+	}, nil, true)
 
 	g := sc.Stack(func(data interface{}, _ Stacks) interface{} {
 		return data
-	})
+	}, true)
+
+	defer sc.Emit(7)
+	defer g.Emit(82)
+	// defer g.Close()
 
 	_ = LogStack(g)
 
 	_ = sc.Stack(func(data interface{}, _ Stacks) interface{} {
 		return 20
-	})
+	}, true)
 
 	xres := sc.Emit(1)
 	yres := g.Emit(30)
@@ -33,11 +37,11 @@ func TestStackers(t *testing.T) {
 		log.Fatalf("Equal unexpect values %d %d", xres, yres)
 	}
 
-	g.Unstack()
-
 	xres = sc.Emit(40)
 
 	if xres == yres {
 		log.Fatalf("Equal unexpect values %d %d", xres, yres)
 	}
+
+	sc.Close()
 }
