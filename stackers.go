@@ -27,6 +27,7 @@ type (
 		RootMux(interface{}) interface{}
 		getWrap() *StackWrap
 		Close() error
+		LockClose(Stacks)
 	}
 
 	//StackWrap provides a single-layer two function binder
@@ -157,21 +158,6 @@ func StreamReader(w io.Reader) (s StackStreamers) {
 
 //Read reads into a byte but its empty
 func (s *StackStream) Read(bu []byte) (int, error) {
-	// s.Listen(func(data interface{}) {
-	// 	bo, ok := data.([]byte)
-	//
-	// 	if ok {
-	// 		bo = append(bu, bo...)
-	// 		return
-	// 	}
-	//
-	// 	br, ok := data.(byte)
-	//
-	// 	if ok {
-	// 		bu = append(bu, br)
-	// 		return
-	// 	}
-	// })
 	return 0, io.ErrNoProgress
 }
 
@@ -216,8 +202,8 @@ func (s *StackStream) Close() error {
 //NewStackStream returns a new stackstream
 func NewStackStream(mx Stackable) StackStreamers {
 	return &StackStream{
-		Stacks:        NewStack(mx, nil, true),
-		closeNotifier: NewStack(StackableIdentity, nil, true),
+		Stacks:        NewStack(mx),
+		closeNotifier: NewStack(StackableIdentity),
 	}
 }
 
@@ -256,20 +242,9 @@ func NewStackWrap(fn Stackable, own Stacks, fx func()) *StackWrap {
 }
 
 //NewStack returns a new stack
-func NewStack(fn Stackable, root Stacks, closeOnRoot bool) (s *Stack) {
+func NewStack(fn Stackable) (s *Stack) {
 	s = &Stack{
 		active: 1,
-		root:   root,
-	}
-
-	if closeOnRoot && root != nil {
-		cx := root.getWrap().closefx
-		root.getWrap().closefx = func() {
-			s.Close()
-			if cx != nil {
-				cx()
-			}
-		}
 	}
 
 	s.wrap = NewStackWrap(fn, s, nil)
@@ -399,6 +374,17 @@ func (s *Stack) Listen(fn HalfStackable) Stacks {
 	}, true)
 }
 
+//LockClose locks the stacks to the close of this
+func (s *Stack) LockClose(m Stacks) {
+	cx := s.getWrap().closefx
+	s.getWrap().closefx = func() {
+		m.Close()
+		if cx != nil {
+			cx()
+		}
+	}
+}
+
 //Stack builds a new stack from this previous stack, the connectClose defines whether you want the new Stack closed when its parent is closed,if false then we dont close it when the root closes
 func (s *Stack) Stack(fn Stackable, connectClose bool) Stacks {
 	if s.wrap == nil {
@@ -411,8 +397,15 @@ func (s *Stack) Stack(fn Stackable, connectClose bool) Stacks {
 		}
 	}
 
-	m := NewStack(fn, s, connectClose)
+	m := NewStack(fn)
+	m.root = s
+
 	s.wrap.next = m.wrap
+
+	if connectClose {
+		s.LockClose(m)
+	}
+
 	return m
 }
 

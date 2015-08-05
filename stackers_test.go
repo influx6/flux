@@ -13,7 +13,7 @@ func TestStackers(t *testing.T) {
 		}
 
 		return nm
-	}, nil, true)
+	})
 
 	g := sc.Stack(func(data interface{}, _ Stacks) interface{} {
 		return data
