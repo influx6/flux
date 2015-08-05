@@ -37,6 +37,7 @@ func TestStackers(t *testing.T) {
 	}
 
 	xres = sc.Emit(40)
+	g.RootEmit(20)
 
 	if xres == yres {
 		log.Fatalf("Equal unexpect values %d %d", xres, yres)

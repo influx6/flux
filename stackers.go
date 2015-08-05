@@ -23,6 +23,8 @@ type (
 		Unstack()
 		Emit(interface{}) interface{}
 		Mux(interface{}) interface{}
+		RootEmit(interface{}) interface{}
+		RootMux(interface{}) interface{}
 		getWrap() *StackWrap
 		Close() error
 	}
@@ -155,6 +157,21 @@ func StreamReader(w io.Reader) (s StackStreamers) {
 
 //Read reads into a byte but its empty
 func (s *StackStream) Read(bu []byte) (int, error) {
+	// s.Listen(func(data interface{}) {
+	// 	bo, ok := data.([]byte)
+	//
+	// 	if ok {
+	// 		bo = append(bu, bo...)
+	// 		return
+	// 	}
+	//
+	// 	br, ok := data.(byte)
+	//
+	// 	if ok {
+	// 		bu = append(bu, br)
+	// 		return
+	// 	}
+	// })
 	return 0, io.ErrNoProgress
 }
 
@@ -309,6 +326,38 @@ func (s *Stack) Mux(b interface{}) interface{} {
 		}
 	}
 	return res
+}
+
+//RootEmit allows the passing of a value to the root of a tree before executing an emit downwards
+func (s *Stack) RootEmit(b interface{}) interface{} {
+	if b == nil {
+		return nil
+	}
+	if s.wrap == nil {
+		return nil
+	}
+
+	if s.root != nil {
+		return s.root.RootEmit(b)
+	}
+
+	return s.Emit(b)
+}
+
+//RootMux allows the passing of a value to the root of a tree before executing mux downwards
+func (s *Stack) RootMux(b interface{}) interface{} {
+	if b == nil {
+		return nil
+	}
+	if s.wrap == nil {
+		return nil
+	}
+
+	if s.root != nil {
+		return s.root.RootMux(b)
+	}
+
+	return s.Mux(b)
 }
 
 //Close destroys the stack and any other chain it has
