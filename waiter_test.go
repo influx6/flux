@@ -1,7 +1,6 @@
 package flux
 
 import (
-	"log"
 	"sync"
 	"testing"
 	"time"
@@ -24,7 +23,7 @@ func TestWhileTicker(t *testing.T) {
 				ws.Done()
 			}
 		}
-		log.Println("closing loop")
+		log.Info("closing loop")
 	})
 
 	ws.Wait()

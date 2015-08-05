@@ -1,11 +1,19 @@
 package flux
 
 import (
-	"log"
 	"runtime"
 	"runtime/debug"
 	"strings"
 )
+
+//Report provides a nice abstaction for doing basic report
+func Report(e error, msg string) {
+	if e != nil {
+		log.Error("Message: (%s) with Error: (%+v)", msg, e)
+	} else {
+		log.Info("Message: (%s) with NoError", msg)
+	}
+}
 
 //GoDefer letsw you run a function inside a goroutine that gets a defer recovery
 func GoDefer(title string, fx func()) {
@@ -14,11 +22,11 @@ func GoDefer(title string, fx func()) {
 			if err := recover(); err != nil {
 				var stacks []byte
 				runtime.Stack(stacks, true)
-				log.Printf("---------%s-Panic----------------:", strings.ToUpper(title))
-				log.Printf("Stack Error: %+s", err)
-				log.Printf("Debug Stack: %+s", debug.Stack())
-				log.Printf("Stack List: %+s", stacks)
-				log.Printf("---------%s--END-----------------:", strings.ToUpper(title))
+				log.Debug("---------%s-Panic----------------:", strings.ToUpper(title))
+				log.Debug("Stack Error: %+s", err)
+				log.Debug("Debug Stack: %+s", debug.Stack())
+				log.Debug("Stack List: %+s", stacks)
+				log.Debug("---------%s--END-----------------:", strings.ToUpper(title))
 			}
 		}()
 		fx()

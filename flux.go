@@ -3,7 +3,11 @@ package flux
 import (
 	"fmt"
 	"sync"
+
+	"github.com/op/go-logging"
 )
+
+var log = logging.MustGetLogger("flux")
 
 //Eachfunc defines the type of the Mappable.Each rule
 type Eachfunc func(interface{}, interface{}, func())

@@ -1,7 +1,6 @@
 package flux
 
 import (
-	"log"
 	"testing"
 )
 

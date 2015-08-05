@@ -2,7 +2,6 @@ package flux
 
 import (
 	"errors"
-	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -163,17 +162,13 @@ func (r *ResetTimer) Add() {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	state := int(atomic.LoadInt64(&r.state))
-	startd := int(atomic.LoadInt64(&r.started))
-
-	log.Printf("Waiter checking State! State at %d Started %d", state, startd)
+	// startd := int(atomic.LoadInt64(&r.started))
 
 	if r.kill == nil {
-		log.Printf("RestTimer kill is nil")
 		r.kill = make(chan struct{})
 	}
 
 	if r.reset == nil {
-		log.Printf("RestTimer reset is nil")
 		r.reset = make(chan struct{})
 	}
 
@@ -221,15 +216,12 @@ func (r *ResetTimer) handle() {
 		for {
 			select {
 			case <-reset:
-				log.Printf("ResetTimer: reseting timer by duration %+s", r.duration)
 				threshold = r.makeTime()
 			case <-threshold:
-				log.Printf("ResetTimer: timer expired with duration %+s", r.duration)
 				r.done()
 				atomic.StoreInt64(&r.state, 0)
 				break resetloop
 			case <-kill:
-				log.Printf("ResetTimer: timer killed using duration %+s", r.duration)
 				atomic.StoreInt64(&r.state, 0)
 				break resetloop
 			}
@@ -396,10 +388,10 @@ func (w *TimeWait) Done() {
 	}
 
 	newhit := atomic.AddInt64(&w.hits, -1)
-	log.Printf("TimeWait: Count Down now %d before %d!", newhit, hits)
+	log.Info("TimeWait: Count Down now %d before %d!", newhit, hits)
 	if int(newhit) <= 0 {
 		w.Flush()
-		log.Printf("TimeWait: Count Down Finished!")
+		log.Info("TimeWait: Count Down Finished!")
 	}
 }
 
@@ -454,7 +446,7 @@ func (w *Wait) Done() {
 	}
 
 	nc := atomic.AddInt64(&w.totalCount, -1)
-	// log.Printf("Wait: Count Down now %d before %d", nc, curr)
+	// log.Info("Wait: Count Down now %d before %d", nc, curr)
 
 	if int(nc) <= 0 {
 		w.action.Fullfill(0)

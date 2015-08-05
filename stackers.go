@@ -2,8 +2,10 @@ package flux
 
 import (
 	"io"
-	"log"
+	slog "log"
 	"sync/atomic"
+
+	"github.com/op/go-logging"
 )
 
 type (
@@ -54,6 +56,18 @@ type (
 		Stacks
 		closeNotifier Stacks
 	}
+
+	//Reports provides a abstraction of report
+	Reports struct {
+		Tag  string
+		Meta map[string]interface{}
+	}
+
+	//StackReport provides a internal bank of reports
+	StackReport struct {
+		stacks chan *Reports
+		ended  int64
+	}
 )
 
 var (
@@ -62,6 +76,68 @@ var (
 		return b
 	}
 )
+
+//ReportCard returns a new StackReport instance, generally ensure its a good max so you can get reports without over-filling the stack,if the stack is full then old reports would be discard
+func ReportCard(max int) *StackReport {
+	return &StackReport{
+		stacks: make(chan *Reports, max),
+	}
+}
+
+//Checkout returns a Stack which gets filled with the current and possible future reports
+func (r *StackReport) Checkout() StackStreamers {
+	cs := NewIdentityStream()
+	GoDefer("CheckoutReport", func() {
+		for {
+
+			state := atomic.LoadInt64(&r.ended)
+
+			if state > 0 {
+				break
+			}
+
+			select {
+			case v, ok := <-r.stacks:
+				if !ok {
+					return
+				}
+				cs.Emit(v)
+			}
+		}
+	})
+	return cs
+}
+
+//Report adds a new report to the reportstack
+func (r *StackReport) Report(tag string, meta map[string]interface{}) {
+	state := atomic.LoadInt64(&r.ended)
+
+	if state > 0 {
+		return
+	}
+
+	curcap := cap(r.stacks)
+	curlen := len(r.stacks)
+
+	if curlen >= curcap {
+		GoDefer("DiscardTopReport", func() {
+			<-r.stacks
+		})
+	}
+
+	r.stacks <- &Reports{tag, meta}
+}
+
+//Close ends the report card operations
+func (r *StackReport) Close() {
+	state := atomic.LoadInt64(&r.ended)
+	if state > 0 {
+		return
+	}
+
+	atomic.StoreInt64(&r.ended, 1)
+	close(r.stacks)
+}
 
 //NewIdentityStream  returns new StackStream
 func NewIdentityStream() StackStreamers {
@@ -281,8 +357,11 @@ func (s *Stack) Stack(fn Stackable, connectClose bool) Stacks {
 	}
 
 	if s.wrap.next != nil {
-		return s.wrap.next.owner.Stack(fn, connectClose)
+		if s.wrap.next.owner != nil {
+			return s.wrap.next.owner.Stack(fn, connectClose)
+		}
 	}
+
 	m := NewStack(fn, s, connectClose)
 	s.wrap.next = m.wrap
 	return m
@@ -291,7 +370,7 @@ func (s *Stack) Stack(fn Stackable, connectClose bool) Stacks {
 //LogStack takes a stack and logs all input coming from it
 func LogStack(s Stacks) Stacks {
 	return s.Stack(func(data interface{}, _ Stacks) interface{} {
-		log.Printf("LogStack: %+s", data)
+		log.Info("LogStack: %+s", data)
 		return data
 	}, true)
 }
@@ -299,15 +378,23 @@ func LogStack(s Stacks) Stacks {
 //LogHeader takes a stack and logs all input from it
 func LogHeader(s Stacks, header string) Stacks {
 	return s.Stack(func(data interface{}, _ Stacks) interface{} {
-		log.Printf(header, data)
+		log.Info(header, data)
 		return data
 	}, true)
 }
 
 //LogStackWith logs all input using a custom logger
-func LogStackWith(s Stacks, l *log.Logger) Stacks {
+func LogStackWith(s Stacks, l *slog.Logger) Stacks {
 	return s.Stack(func(data interface{}, _ Stacks) interface{} {
 		l.Printf("LogStack: %+s", data)
+		return data
+	}, true)
+}
+
+//CustomLogStackWith logs all input using a custom logger
+func CustomLogStackWith(s Stacks, l *logging.Logger) Stacks {
+	return s.Stack(func(data interface{}, _ Stacks) interface{} {
+		l.Info("LogStack: %+s", data)
 		return data
 	}, true)
 }
