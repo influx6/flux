@@ -386,7 +386,7 @@ func (s *Stack) Levitate(b interface{}) interface{} {
 	res := s.wrap.Fn(b, s)
 
 	if s.root != nil {
-		s.root.LiftApply(res)
+		s.root.Levitate(res)
 		// return s.root.LiftApply(res)
 	}
 
@@ -405,7 +405,7 @@ func (s *Stack) LiftApply(b interface{}) interface{} {
 	res := s.wrap.Fn(b, s)
 
 	if s.root != nil {
-		return s.root.Levitate(res)
+		return s.root.LiftApply(res)
 	}
 
 	return res
