@@ -9,7 +9,7 @@ FBP style socket structure which provide simple data buffering and listener noti
 #Examples
 
   - Stacks
-    provide 6 basic emission functions,with each providing a flexible pattern:
+    provide 7 basic emission functions,with each providing a flexible pattern,also to allow stacks provide that 'Once' like behaviour the stack function format provides the data given and the Stack receiving the data (you could easily close a stack after receiving the data if needed)
 
     - Identity:
       Identity just like the matrix operation of the product of a value against an identity matrix returns the same value,here it provides somewhat of an sideeffect pattern where you want to have the stack perform its operation on the data supplied but not affect the returned value and the original value being passed down the chain
