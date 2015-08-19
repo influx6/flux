@@ -1,17 +1,20 @@
-# flux
-FBP style socket structure which provide simple data buffering and listener notification
+# Flux
+A library of interesting structs for the adventurous
 
 ##Goodies
   - Stack
-    provide a very simple approach to function binding and stacking, rather than depend on an array of callbacks or other approaches to provide a pubsub and eventful system. Stacks simple combine functions like linkedlists using nodes i.e each function binds to the next one in a seamless fashion and allows you to emit/apply values at any level of the stack to either propagate upwards or downwards or have only that function effected, which provides a nice base for higher class systems eg function reactivity
+
+    Provide a very simple approach to function binding and stacking, rather than depend on an array of callbacks or other approaches to provide a pubsub and eventful system. Stacks simple combine functions like linkedlists using nodes i.e each function binds to the next one in a seamless fashion and allows you to emit/apply values at any level of the stack to either propagate upwards or downwards or have only that function effected, which provides a nice base for higher class systems eg function reactivity
 
 
 #Examples
 
   - Stacks
-    provide 7 basic emission functions,with each providing a flexible pattern,also to allow stacks provide that 'Once' like behaviour the stack function format provides the data given and the Stack receiving the data (you could easily close a stack after receiving the data if needed)
+
+    Provide 7 basic emission functions,with each providing a flexible pattern,also to allow stacks provide that 'Once' like behaviour the stack function format provides the data given and the Stack receiving the data (you could easily close a stack after receiving the data if needed)
 
     - Identity:
+
       Identity just like the matrix operation of the product of a value against an identity matrix returns the same value,here it provides somewhat of an sideeffect pattern where you want to have the stack perform its operation on the data supplied but not affect the returned value and the original value being passed down the chain
 
        ```
@@ -33,6 +36,7 @@ FBP style socket structure which provide simple data buffering and listener noti
        ```
 
     - Isolate:
+
       Isolate is just what it says, stacks walk alot in chains and there are times you only one to use a specific stack for its effect on a value but do not desire that value to propagate to the rest of the chain(upward or downwards),this provides just that use case
 
        ```
@@ -50,6 +54,7 @@ FBP style socket structure which provide simple data buffering and listener noti
        ```
 
     - Call:
+
       Call is a mix of Isolation with Identity, depending on where the stack is called,the target stack will apply its effect on the data supplied and return its value but propagate the original data to the next stack. Now why this is useful is when a stack diverts at any point is used to create new stacks. Remember the returned value of the stack being used is the modified value by this and only this stack.
 
        ```
@@ -74,6 +79,7 @@ FBP style socket structure which provide simple data buffering and listener noti
        ```
 
     - Apply:
+
       Apply takes Call method a little further by ensuring that when a value is supplied,it is passed down all connected child stacks till the last, hence the returned value received is actually the value returned by the very last stack in the chain.
 
        ```
@@ -98,6 +104,7 @@ FBP style socket structure which provide simple data buffering and listener noti
        ```
 
     - Lift:
+
       Lift provides an interesting reverse direction but of same effect as apply. When you need to apply a value from the root of the chains without having to get the root stack,lift takes the given value and passes until it reaches the root(i.e the stack that has no root Stack) which then calls Apply,to fire off the ripple effects
 
        ```
@@ -122,6 +129,7 @@ FBP style socket structure which provide simple data buffering and listener noti
        ```
 
     - Levitate:
+
       Levitate provides the reverse ripple effect of the Lift function, Levitate allows a bottom-up mutation effect instead of the standard top-down effect,due to the fact that everything is a linked chain,it takes the returned value of each chains and pass it as the value of the upper chain,in this case until the root chain gets the value. The returned value of the stack used to fire this is the returned value of that particular stack after modification by that same stack
 
        ```
@@ -146,6 +154,7 @@ FBP style socket structure which provide simple data buffering and listener noti
        ```
 
     - LiftApply:
+
       LiftApply provide a mix on Levitate operations by follow the same principles but returning the root value after it receives the mutated returned value from its previous mutation
 
        ```
