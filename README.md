@@ -3,13 +3,13 @@ FBP style socket structure which provide simple data buffering and listener noti
 
 ##Goodies
   - Stack
-    Stacks provide a very simple approach to function binding and stacking, rather than depend on an array of callbacks or other approaches to provide a pubsub and eventful system. Stacks simple combine functions like linkedlists using nodes i.e each function binds to the next one in a seamless fashion and allows you to emit/apply values at any level of the stack to either propagate upwards or downwards or have only that function effected, which provides a nice base for higher class systems eg function reactivity
+    provide a very simple approach to function binding and stacking, rather than depend on an array of callbacks or other approaches to provide a pubsub and eventful system. Stacks simple combine functions like linkedlists using nodes i.e each function binds to the next one in a seamless fashion and allows you to emit/apply values at any level of the stack to either propagate upwards or downwards or have only that function effected, which provides a nice base for higher class systems eg function reactivity
 
 
 #Examples
 
   - Stacks
-   Stacks provide 6 basic emission functions,with each providing a flexible pattern:
+    provide 6 basic emission functions,with each providing a flexible pattern:
 
     - Identity:
       Identity just like the matrix operation of the product of a value against an identity matrix returns the same value,here it provides somewhat of an sideeffect pattern where you want to have the stack perform its operation on the data supplied but not affect the returned value and the original value being passed down the chain
