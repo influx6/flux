@@ -21,10 +21,25 @@ type (
 		Stack(Stackable, bool) Stacks
 		Listen(HalfStackable) Stacks
 		Unstack()
-		Emit(interface{}) interface{}
-		Mux(interface{}) interface{}
-		RootEmit(interface{}) interface{}
-		RootMux(interface{}) interface{}
+
+		//Isolate applies to this stack only and does not propagate the value to other stacks
+		Isolate(interface{}) interface{}
+
+		//Identity returns the value apply to it as the return value
+		Identity(interface{}) interface{}
+
+		//Call runs the value, returning the return value of just this particular stacks return value
+		Call(interface{}) interface{}
+
+		//Apply applies the value, returning the values of either this stack or the child stacks if any exists
+		Apply(interface{}) interface{}
+
+		//Lift lifts this value up the root stack for use with the root .Apply() function(allows you to call a root .Apply() method from anylevel of the stack)
+		Lift(interface{}) interface{}
+
+		//LiftApply calls the stack from bottom up and takes the result from a lower stack to apply to its parent stack
+		LiftApply(interface{}) interface{}
+
 		getWrap() *StackWrap
 		Close() error
 		LockClose(Stacks)
@@ -104,7 +119,7 @@ func (r *StackReport) Checkout() StackStreamers {
 				if !ok {
 					return
 				}
-				cs.Emit(v)
+				cs.Call(v)
 			}
 		}
 	})
@@ -163,7 +178,7 @@ func (s *StackStream) Read(bu []byte) (int, error) {
 
 //Write writes into the stream
 func (s *StackStream) Write(bu []byte) (int, error) {
-	s.Emit(bu)
+	s.Call(bu)
 	return len(bu), nil
 }
 
@@ -194,7 +209,7 @@ func (s *StackStream) Closed() Stacks {
 //Close ends this stacks connections
 func (s *StackStream) Close() error {
 	defer s.closeNotifier.Close()
-	s.closeNotifier.Emit(true)
+	s.closeNotifier.Call(true)
 	s.Stacks.Close()
 	return nil
 }
@@ -251,9 +266,75 @@ func NewStack(fn Stackable) (s *Stack) {
 	return
 }
 
-//Emit sends a data into the stack and returns this stack
+//Isolate applies to this stack only and does not propagate the value to other stacks
+func (s *Stack) Isolate(b interface{}) interface{} {
+	if b == nil {
+		return nil
+	}
+	if s.wrap == nil {
+		return nil
+	}
+
+	res := b
+	state := atomic.LoadInt64(&s.active)
+	if state > 0 {
+		res = s.wrap.Fn(b, s)
+	}
+	return res
+}
+
+//Identity sends a data into the stack and returns the value supplied,like apply a matrix op V * I = V
+func (s *Stack) Identity(b interface{}) interface{} {
+	if b == nil {
+		return nil
+	}
+	if s.wrap == nil {
+		return nil
+	}
+
+	// res := b
+	state := atomic.LoadInt64(&s.active)
+	if state > 0 {
+		_ = s.wrap.Fn(b, s)
+		if s.wrap != nil {
+			if s.wrap.next != nil {
+				if s.wrap.next.owner != nil {
+					_ = s.wrap.next.owner.Identity(b)
+				}
+			}
+		}
+	}
+
+	return b
+}
+
+//Call runs the value returning the return value of just this particular stacks return value
+func (s *Stack) Call(b interface{}) interface{} {
+	if b == nil {
+		return nil
+	}
+	if s.wrap == nil {
+		return nil
+	}
+
+	res := b
+	state := atomic.LoadInt64(&s.active)
+	if state > 0 {
+		res = s.wrap.Fn(b, s)
+		if s.wrap != nil {
+			if s.wrap.next != nil {
+				if s.wrap.next.owner != nil {
+					_ = s.wrap.next.owner.Call(b)
+				}
+			}
+		}
+	}
+	return res
+}
+
+//Apply sends a data into the stack and returns this stack
 //returned value
-func (s *Stack) Emit(b interface{}) interface{} {
+func (s *Stack) Apply(b interface{}) interface{} {
 	if b == nil {
 		return nil
 	}
@@ -261,14 +342,14 @@ func (s *Stack) Emit(b interface{}) interface{} {
 		return nil
 	}
 
-	var res interface{}
+	res := b
 	state := atomic.LoadInt64(&s.active)
 	if state > 0 {
 		res = s.wrap.Fn(b, s)
 		if s.wrap != nil {
 			if s.wrap.next != nil {
 				if s.wrap.next.owner != nil {
-					_ = s.wrap.next.owner.Emit(b)
+					return s.wrap.next.owner.Apply(res)
 				}
 			}
 		}
@@ -276,35 +357,8 @@ func (s *Stack) Emit(b interface{}) interface{} {
 	return res
 }
 
-//Mux lets you mutate the next passed data to the next
-//stack,that is this stack return value is the next stacks input
-func (s *Stack) Mux(b interface{}) interface{} {
-	if b == nil {
-		return nil
-	}
-	if s.wrap == nil {
-		return nil
-	}
-
-	var res interface{}
-	state := atomic.LoadInt64(&s.active)
-	if state > 0 {
-		res = s.wrap.Fn(b, s)
-		if s.wrap != nil {
-			if s.wrap.next != nil {
-				if s.wrap.next.owner != nil {
-					if res != nil {
-						s.wrap.next.owner.Emit(res)
-					}
-				}
-			}
-		}
-	}
-	return res
-}
-
-//RootEmit allows the passing of a value to the root of a tree before executing an emit downwards
-func (s *Stack) RootEmit(b interface{}) interface{} {
+//Lift allows the passing of a value to the root of a tree before executing an emit downwards
+func (s *Stack) Lift(b interface{}) interface{} {
 	if b == nil {
 		return nil
 	}
@@ -313,14 +367,14 @@ func (s *Stack) RootEmit(b interface{}) interface{} {
 	}
 
 	if s.root != nil {
-		return s.root.RootEmit(b)
+		return s.root.Lift(b)
 	}
 
-	return s.Emit(b)
+	return s.Apply(b)
 }
 
-//RootMux allows the passing of a value to the root of a tree before executing mux downwards
-func (s *Stack) RootMux(b interface{}) interface{} {
+//LiftApply takes a value,mutates it then pass that to the root. moving from bottom-to-top
+func (s *Stack) LiftApply(b interface{}) interface{} {
 	if b == nil {
 		return nil
 	}
@@ -328,11 +382,13 @@ func (s *Stack) RootMux(b interface{}) interface{} {
 		return nil
 	}
 
+	res := s.wrap.Fn(b, s)
+
 	if s.root != nil {
-		return s.root.RootMux(b)
+		return s.root.LiftApply(res)
 	}
 
-	return s.Mux(b)
+	return res
 }
 
 //Close destroys the stack and any other chain it has
