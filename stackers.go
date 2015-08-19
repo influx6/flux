@@ -37,8 +37,10 @@ type (
 		//Lift lifts this value up the root stack for use with the root .Apply() function(allows you to call a root .Apply() method from anylevel of the stack)
 		Lift(interface{}) interface{}
 
-		//LiftApply calls the stack from bottom up and takes the result from a lower stack to apply to its parent stack
+		//LiftApply calls the stack from bottom up and takes the result from a lower stack to apply to its parent stack and returns the root return value
 		LiftApply(interface{}) interface{}
+
+		//Levitate calls the stack from bottom up feeding the root with the returned value from the child but returns the child returned value
 		Levitate(interface{}) interface{}
 
 		getWrap() *StackWrap
@@ -515,4 +517,20 @@ func CustomLogStackWith(s Stacks, l *logging.Logger) Stacks {
 		l.Info("LogStack: %+s", data)
 		return data
 	}, true)
+}
+
+//BoolOnly ensures only boolean value pass through
+func BoolOnly(s Stacks) Stacks {
+	sm := NewIdentityStream()
+
+	s.Listen(func(data interface{}) {
+		bl, ok := data.(bool)
+		if ok {
+			sm.Apply(bl)
+		}
+	})
+
+	s.LockClose(sm)
+
+	return sm
 }
