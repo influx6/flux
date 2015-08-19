@@ -39,6 +39,7 @@ type (
 
 		//LiftApply calls the stack from bottom up and takes the result from a lower stack to apply to its parent stack
 		LiftApply(interface{}) interface{}
+		Levitate(interface{}) interface{}
 
 		getWrap() *StackWrap
 		Close() error
@@ -324,7 +325,7 @@ func (s *Stack) Call(b interface{}) interface{} {
 		if s.wrap != nil {
 			if s.wrap.next != nil {
 				if s.wrap.next.owner != nil {
-					_ = s.wrap.next.owner.Call(b)
+					_ = s.wrap.next.owner.Call(res)
 				}
 			}
 		}
@@ -373,6 +374,25 @@ func (s *Stack) Lift(b interface{}) interface{} {
 	return s.Apply(b)
 }
 
+//Levitate takes a value,mutates it then passes up to the root, moving from bottom-up and returns the roots returned value
+func (s *Stack) Levitate(b interface{}) interface{} {
+	if b == nil {
+		return nil
+	}
+	if s.wrap == nil {
+		return nil
+	}
+
+	res := s.wrap.Fn(b, s)
+
+	if s.root != nil {
+		s.root.LiftApply(res)
+		// return s.root.LiftApply(res)
+	}
+
+	return res
+}
+
 //LiftApply takes a value,mutates it then pass that to the root. moving from bottom-to-top
 func (s *Stack) LiftApply(b interface{}) interface{} {
 	if b == nil {
@@ -385,7 +405,7 @@ func (s *Stack) LiftApply(b interface{}) interface{} {
 	res := s.wrap.Fn(b, s)
 
 	if s.root != nil {
-		return s.root.LiftApply(res)
+		return s.root.Levitate(res)
 	}
 
 	return res

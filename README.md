@@ -1,123 +1,170 @@
 # flux
 FBP style socket structure which provide simple data buffering and listener notification
 
-##Sockets
-
- - Push
- builds on top of the socket structure where every data emitted is immediately sent to the listener lists
-
- - Pull
- builds on top of the socket structure and emits data into a buffered channel which then can be pull into the listeners
+##Goodies
+  - Stack
+    Stacks provide a very simple approach to function binding and stacking, rather than depend on an array of callbacks or other approaches to provide a pubsub and eventful system. Stacks simple combine functions like linkedlists using nodes i.e each function binds to the next one in a seamless fashion and allows you to emit/apply values at any level of the stack to either propagate upwards or downwards or have only that function effected, which provides a nice base for higher class systems eg function reactivity
 
 
 #Examples
 
-- Pull Sockets: With pull sockets we must be ready to loose oldest packet
-when the channel is full
-```
+  - Stacks
+   Stacks provide 6 basic emission functions,with each providing a flexible pattern:
 
-	sock := PullSocket(10)
+    - Identity:
+      Identity just like the matrix operation of the product of a value against an identity matrix returns the same value,here it provides somewhat of an sideeffect pattern where you want to have the stack perform its operation on the data supplied but not affect the returned value and the original value being passed down the chain
 
-	defer sock.Close()
+       ```
 
-	sock.Subscribe(func(v interface{}, s *Sub) {
-		defer s.Close()
-		_, ok := v.(string)
-		if !ok {
-			t.Fatal("value received is not a string", v, ok, s)
-		}
-	})
+      	master := NewStack(func(data interface{}, _ Stacks) interface{} {
+          //data = 20
+      		log.Println(data.(int) * 20)
+          return nil
+      	})
 
-	sock.Emit("Token")
-	sock.Emit("Bottle")
-	sock.PushStream()
+      	slave := master.Stack(func(data interface{}, _ Stacks) interface{} {
+          //data = 20
+      		log.Println(data.(int) / 20)
+          return nil //will be replaced by 20
+      	}, true)
 
+        mval := master.Identity(20) //mval = 20 and slave receives no data hits
 
-```
+       ```
 
-- Push Sockets
+    - Isolate:
+      Isolate is just what it says, stacks walk alot in chains and there are times you only one to use a specific stack for its effect on a value but do not desire that value to propagate to the rest of the chain(upward or downwards),this provides just that use case
 
-```
+       ```
 
-	sock := PushSocket(0)
+      	master := NewStack(func(data interface{}, _ Stacks) interface{} {
+      		return data.(int) * 20
+      	})
 
-	sock.Subscribe(func(v interface{}, r *Sub) {
-		// defer r.Close()
-		_, ok := v.(string)
-		t.Log("blockpush:", v)
-		if !ok {
-			t.Fatal("value received is not a string", v, ok, r)
-		}
-	})
+      	slave := master.Stack(func(data interface{}, _ Stacks) interface{} {
+      		return data.(int) / 20
+      	}, true)
 
-	sock.PushStream()
-	sock.PushStream()
-	sock.PushStream()
+        mval := master.Isolate(20) //mval = 400 and slave receives no data hits
 
-	sock.Emit("Token")
-	sock.Emit("Bottle")
-	sock.Emit("Rocket")
+       ```
 
-	sock.Close()
+    - Call:
+      Call is a mix of Isolation with Identity, depending on where the stack is called,the target stack will apply its effect on the data supplied and return its value but propagate the original data to the next stack. Now why this is useful is when a stack diverts at any point is used to create new stacks. Remember the returned value of the stack being used is the modified value by this and only this stack.
 
-```
+       ```
 
-- PushPull Sockets
+      	master := NewStack(func(data interface{}, _ Stacks) interface{} {
+          //data = 20
+          return datal.(int) * 20
+      	})
 
-```
+      	slave := master.Stack(func(data interface{}, _ Stacks) interface{} {
+          //data = 400
+          return data.(int) / 10
+      	}, true)
 
-	sock := PushSocket(0)
-	dsock := DoPullSocket(10,sock, func(v interface{}, s SocketInterface) {
-		if v == "Bottle" {
-			s.Emit(v)
-		}
-	})
+      	slave2 := slave.Stack(func(data interface{}, _ Stacks) interface{} {
+          //data = 40
+          return data + 50
+      	}, true)
 
-	defer sock.Close()
-	defer dsock.Close()
+        master.Call(20) //returns  400 but slave gets 20 and slave2 gets 1
 
-	dsock.Subscribe(func(v interface{}, s *Sub) {
-		defer s.Close()
-		_, ok := v.(string)
-		if !ok {
-			t.Fatal("value received is not a string", v, ok, s)
-		}
-	})
+       ```
 
-	sock.Emit("Token")
-	sock.Emit("Bottle")
-	sock.Emit("Beer")
-	dsock.PushStream()
+    - Apply:
+      Apply takes Call method a little further by ensuring that when a value is supplied,it is passed down all connected child stacks till the last, hence the returned value received is actually the value returned by the very last stack in the chain.
 
-```
+       ```
 
+      	master := NewStack(func(data interface{}, _ Stacks) interface{} {
+          //data = 20
+          return datal.(int) * 20
+      	})
 
-- PullPush Sockets
+      	slave := master.Stack(func(data interface{}, _ Stacks) interface{} {
+          //data = 400
+          return data.(int) / 10
+      	}, true)
 
-```
+      	slave2 := slave.Stack(func(data interface{}, _ Stacks) interface{} {
+          //data = 40
+          return data + 50
+      	}, true)
 
-	sock := PullSocket(10)
-	dsock := DoPushSocket(sock, func(v interface{}, s SocketInterface) {
-		if v == "Bottle" {
-			s.Emit(v)
-		}
-	})
+        master.Apply(20) //returns  90
 
-	defer sock.Close()
-	defer dsock.Close()
+       ```
 
-	dsock.Subscribe(func(v interface{}, s *Sub) {
-		defer s.Close()
-		_, ok := v.(string)
-		if !ok {
-			t.Fatal("value received is not a string", v, ok, s)
-		}
-	})
+    - Lift:
+      Lift provides an interesting reverse direction but of same effect as apply. When you need to apply a value from the root of the chains without having to get the root stack,lift takes the given value and passes until it reaches the root(i.e the stack that has no root Stack) which then calls Apply,to fire off the ripple effects
 
-	sock.Emit("Token")
-	sock.Emit("Bottle")
-	sock.Emit("Beer")
-	sock.PushStream()
+       ```
 
+      	master := NewStack(func(data interface{}, _ Stacks) interface{} {
+          //data = 20
+          return datal.(int) * 20
+      	})
 
-```
+      	slave := master.Stack(func(data interface{}, _ Stacks) interface{} {
+          //data = 400
+          return data.(int) / 10
+      	}, true)
+
+      	slave2 := slave.Stack(func(data interface{}, _ Stacks) interface{} {
+          //data = 40
+          return data + 50
+      	}, true)
+
+        slave.Lift(20) //returns  90
+
+       ```
+
+    - Levitate:
+      Levitate provides the reverse ripple effect of the Lift function, Levitate allows a bottom-up mutation effect instead of the standard top-down effect,due to the fact that everything is a linked chain,it takes the returned value of each chains and pass it as the value of the upper chain,in this case until the root chain gets the value. The returned value of the stack used to fire this is the returned value of that particular stack after modification by that same stack
+
+       ```
+
+      	master := NewStack(func(data interface{}, _ Stacks) interface{} {
+          //data = 20
+          return datal.(int) * 20
+      	})
+
+      	slave := master.Stack(func(data interface{}, _ Stacks) interface{} {
+          //data = 400
+          return data.(int) / 10
+      	}, true)
+
+      	slave2 := slave.Stack(func(data interface{}, _ Stacks) interface{} {
+          //data = 40
+          return data + 50
+      	}, true)
+
+        slave2.Levitate(20) //returns  70
+
+       ```
+
+    - LiftApply:
+      LiftApply provide a mix on Levitate operations by follow the same principles but returning the root value after it receives the mutated returned value from its previous mutation
+
+       ```
+
+      	master := NewStack(func(data interface{}, _ Stacks) interface{} {
+          //data = 7
+          return datal.(int) * 20
+      	})
+
+      	slave := master.Stack(func(data interface{}, _ Stacks) interface{} {
+          //data = 70
+          return data.(int) / 10
+      	}, true)
+
+      	slave2 := slave.Stack(func(data interface{}, _ Stacks) interface{} {
+          //data = 20
+          return data + 50
+      	}, true)
+
+        slave2.LiftApply(20) //returns  140
+
+       ```

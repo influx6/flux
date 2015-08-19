@@ -39,7 +39,7 @@ func TestLift(t *testing.T) {
 	}
 }
 
-func TestLiftApply(t *testing.T) {
+func TestLevitate(t *testing.T) {
 	sc := NewStack(func(data interface{}, _ Stacks) interface{} {
 		if data != 1 {
 			t.Fatal("Value is incorrect,expected 1", data)
@@ -54,7 +54,27 @@ func TestLiftApply(t *testing.T) {
 		return data.(int) / 20
 	}, true)
 
-	if val := gs.LiftApply(20); val != 20 {
+	if val := gs.Levitate(20); val != 1 {
+		log.Debug("liftapply: Return value is incorrect:", val)
+	}
+}
+
+func TestLiftApply(t *testing.T) {
+	sc := NewStack(func(data interface{}, _ Stacks) interface{} {
+		if data != 1 {
+			t.Fatal("Value is incorrect,expected 1", data)
+		}
+		return data.(int) * 10
+	})
+
+	gs := sc.Stack(func(data interface{}, _ Stacks) interface{} {
+		if data != 20 {
+			t.Fatal("Value is incorrect:", data)
+		}
+		return data.(int) / 20
+	}, true)
+
+	if val := gs.LiftApply(20); val != 10 {
 		log.Debug("liftapply: Return value is incorrect:", val)
 	}
 }
@@ -64,8 +84,15 @@ func TestCall(t *testing.T) {
 		return data.(int) * 20
 	})
 
-	_ = sc.Stack(func(data interface{}, _ Stacks) interface{} {
-		if data != 20 {
+	gs := sc.Stack(func(data interface{}, _ Stacks) interface{} {
+		if data != 400 {
+			t.Fatal("Value is incorrect:", data)
+		}
+		return data.(int) / 10
+	}, true)
+
+	_ = gs.Stack(func(data interface{}, _ Stacks) interface{} {
+		if data != 40 {
 			t.Fatal("Value is incorrect:", data)
 		}
 		return data.(int) / 20
