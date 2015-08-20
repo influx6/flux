@@ -388,10 +388,8 @@ func (w *TimeWait) Done() {
 	}
 
 	newhit := atomic.AddInt64(&w.hits, -1)
-	log.Info("TimeWait: Count Down now %d before %d!", newhit, hits)
 	if int(newhit) <= 0 {
 		w.Flush()
-		log.Info("TimeWait: Count Down Finished!")
 	}
 }
 

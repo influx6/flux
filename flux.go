@@ -3,11 +3,7 @@ package flux
 import (
 	"fmt"
 	"sync"
-
-	"github.com/op/go-logging"
 )
-
-var log = logging.MustGetLogger("flux")
 
 //Collector defines a typ of map string
 type Collector map[string]interface{}

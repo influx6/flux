@@ -2,10 +2,8 @@ package flux
 
 import (
 	"io"
-	slog "log"
+	"log"
 	"sync/atomic"
-
-	"github.com/op/go-logging"
 )
 
 type (
@@ -514,7 +512,7 @@ func (s *Stack) Stack(fn Stackable, connectClose bool) Stacks {
 //LogStack takes a stack and logs all input coming from it
 func LogStack(s Stacks) Stacks {
 	return s.Stack(func(data interface{}, _ Stacks) interface{} {
-		log.Info("LogStack: %+s", data)
+		log.Printf("LogStack: %+s", data)
 		return data
 	}, true)
 }
@@ -522,23 +520,15 @@ func LogStack(s Stacks) Stacks {
 //LogHeader takes a stack and logs all input from it
 func LogHeader(s Stacks, header string) Stacks {
 	return s.Stack(func(data interface{}, _ Stacks) interface{} {
-		log.Info(header, data)
+		log.Printf(header, data)
 		return data
 	}, true)
 }
 
 //LogStackWith logs all input using a custom logger
-func LogStackWith(s Stacks, l *slog.Logger) Stacks {
+func LogStackWith(s Stacks, l *log.Logger) Stacks {
 	return s.Stack(func(data interface{}, _ Stacks) interface{} {
 		l.Printf("LogStack: %+s", data)
-		return data
-	}, true)
-}
-
-//CustomLogStackWith logs all input using a custom logger
-func CustomLogStackWith(s Stacks, l *logging.Logger) Stacks {
-	return s.Stack(func(data interface{}, _ Stacks) interface{} {
-		l.Info("LogStack: %+s", data)
 		return data
 	}, true)
 }
@@ -557,4 +547,17 @@ func BoolOnly(s Stacks) Stacks {
 	s.LockClose(sm)
 
 	return sm
+}
+
+//CombineStacks returns a new stack
+func CombineStacks(mo ...Stacks) Stacks {
+	co := IdentityStack()
+
+	for _, ms := range mo {
+		ms.Listen(func(b interface{}) {
+			co.Call(b)
+		})
+	}
+
+	return co
 }

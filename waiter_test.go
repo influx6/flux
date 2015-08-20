@@ -18,12 +18,10 @@ func TestWhileTicker(t *testing.T) {
 		for w.Signals() != nil {
 			select {
 			case <-w.Signals():
-				t.Logf("Received Signal %d", count)
 				count++
 				ws.Done()
 			}
 		}
-		log.Info("closing loop")
 	})
 
 	ws.Wait()

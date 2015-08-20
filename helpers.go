@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,7 +22,7 @@ type FileCloser struct {
 //Close ends and deletes the file
 func (f *FileCloser) Close() error {
 	ec := f.File.Close()
-	log.Info("Will Remove %s", f.path)
+	log.Printf("Will Remove %s", f.path)
 	ex := os.Remove(f.path)
 
 	if ex == nil {
@@ -72,7 +73,6 @@ func GzipWalker(file string, tmp io.Writer) error {
 	gz := gzip.NewWriter(tmp)
 	defer gz.Close()
 
-	log.Info("Will Copy data from file to gzip")
 	_, err = io.Copy(gz, f)
 
 	return err
@@ -120,7 +120,6 @@ func TarWalker(rootpath string, w io.Writer) error {
 
 	err := filepath.Walk(rootpath, walkFn)
 	if err != nil {
-		log.Fatalf("Error occured walking dir %s with Error: (%+s)", rootpath, err.Error())
 		return err
 	}
 
@@ -180,9 +179,9 @@ func ForwardsSkip(to int, fx func(int, func())) {
 //Report provides a nice abstaction for doing basic report
 func Report(e error, msg string) {
 	if e != nil {
-		log.Error("Message: (%s)", msg, e)
+		log.Fatalf("Message: (%s) with Error: (%s)", msg, e.Error())
 	} else {
-		log.Info("Message: (%s) with NoError", msg)
+		log.Printf("Message: (%s) with NoError", msg)
 	}
 }
 
@@ -193,11 +192,11 @@ func GoDefer(title string, fx func()) {
 			if err := recover(); err != nil {
 				var stacks []byte
 				runtime.Stack(stacks, true)
-				log.Debug("---------%s-Panic----------------:", strings.ToUpper(title))
-				log.Debug("Stack Error: %+s", err)
-				log.Debug("Debug Stack: %+s", debug.Stack())
-				log.Debug("Stack List: %+s", stacks)
-				log.Debug("---------%s--END-----------------:", strings.ToUpper(title))
+				log.Printf("---------%s-Panic----------------:", strings.ToUpper(title))
+				log.Printf("Stack Error: %+s", err)
+				log.Printf("Debug Stack: %+s", debug.Stack())
+				log.Printf("Stack List: %+s", stacks)
+				log.Printf("---------%s--END-----------------:", strings.ToUpper(title))
 			}
 		}()
 		fx()
