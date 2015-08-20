@@ -269,6 +269,11 @@ func NewStack(fn Stackable) (s *Stack) {
 	return
 }
 
+//IdentityStack returns a stack that returns its values
+func IdentityStack() *Stack {
+	return NewStack(StackableIdentity)
+}
+
 //Isolate applies to this stack only and does not propagate the value to other stacks
 func (s *Stack) Isolate(b interface{}) interface{} {
 	if b == nil {
