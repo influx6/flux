@@ -43,8 +43,16 @@ type (
 		//Levitate calls the stack from bottom up feeding the root with the returned value from the child but returns the child returned value
 		Levitate(interface{}) interface{}
 
-		getWrap() *StackWrap
+		//Channel returns a receive only channel for notification instead of using the callback approach with Listen or stack
+		Channel() <-chan interface{}
+
+		//Close closes the stacks
 		Close() error
+
+		//getWrap returns the stack wrapper
+		getWrap() *StackWrap
+
+		//LockClose clocks the provided stack with this,ensuring to close it when this stack gets closed
 		LockClose(Stacks)
 	}
 
@@ -455,6 +463,17 @@ func (s *Stack) Listen(fn HalfStackable) Stacks {
 		fn(b)
 		return b
 	}, true)
+}
+
+//Channel returns a unbuffered channel for notification
+func (s *Stack) Channel() <-chan interface{} {
+	mc := make(chan interface{})
+	s.Listen(func(data interface{}) {
+		GoDefer("Stack-Channel-Deliver", func() {
+			mc <- data
+		})
+	})
+	return mc
 }
 
 //LockClose locks the stacks to the close of this
