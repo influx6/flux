@@ -13,28 +13,6 @@ A library of interesting structs for the adventurous
 
     Provide 7 basic emission functions,with each providing a flexible pattern,also to allow stacks provide that 'Once' like behaviour the stack function format provides the data given and the Stack receiving the data (you could easily close a stack after receiving the data if needed)
 
-    - Identity:
-
-      Identity just like the matrix operation of the product of a value against an identity matrix returns the same value,here it provides somewhat of an sideeffect pattern where you want to have the stack perform its operation on the data supplied but not affect the returned value and the original value being passed down the chain
-
-       ```
-
-      	master := NewStack(func(data interface{}, _ Stacks) interface{} {
-          //data = 20
-      		log.Println(data.(int) * 20)
-          return nil
-      	})
-
-      	slave := master.Stack(func(data interface{}, _ Stacks) interface{} {
-          //data = 20
-      		log.Println(data.(int) / 20)
-          return nil //will be replaced by 20
-      	}, true)
-
-        mval := master.Identity(20) //mval = 20 and slave receives no data hits
-
-       ```
-
     - Isolate:
 
       Isolate is just what it says, stacks walk alot in chains and there are times you only one to use a specific stack for its effect on a value but do not desire that value to propagate to the rest of the chain(upward or downwards),this provides just that use case

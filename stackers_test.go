@@ -3,11 +3,11 @@ package flux
 import "testing"
 
 func TestApply(t *testing.T) {
-	sc := NewStack(func(data interface{}, _ Stacks) interface{} {
+	sc := NewStack(func(_ Stacks, data interface{}) interface{} {
 		return data.(int) * 20
 	})
 
-	_ = sc.Stack(func(data interface{}, _ Stacks) interface{} {
+	_ = sc.Stack(func(_ Stacks, data interface{}) interface{} {
 		if data != 400 {
 			t.Fatal("Value is incorrect:", data)
 		}
@@ -20,11 +20,11 @@ func TestApply(t *testing.T) {
 }
 
 func TestLift(t *testing.T) {
-	sc := NewStack(func(data interface{}, _ Stacks) interface{} {
+	sc := NewStack(func(_ Stacks, data interface{}) interface{} {
 		return data.(int) * 20
 	})
 
-	gs := sc.Stack(func(data interface{}, _ Stacks) interface{} {
+	gs := sc.Stack(func(_ Stacks, data interface{}) interface{} {
 		if data != 400 {
 			t.Fatal("Value is incorrect:", data)
 		}
@@ -37,14 +37,14 @@ func TestLift(t *testing.T) {
 }
 
 func TestLevitate(t *testing.T) {
-	sc := NewStack(func(data interface{}, _ Stacks) interface{} {
+	sc := NewStack(func(_ Stacks, data interface{}) interface{} {
 		if data != 1 {
 			t.Fatal("Value is incorrect,expected 1", data)
 		}
 		return data.(int) * 20
 	})
 
-	gs := sc.Stack(func(data interface{}, _ Stacks) interface{} {
+	gs := sc.Stack(func(_ Stacks, data interface{}) interface{} {
 		if data != 20 {
 			t.Fatal("Value is incorrect:", data)
 		}
@@ -57,14 +57,14 @@ func TestLevitate(t *testing.T) {
 }
 
 func TestLiftApply(t *testing.T) {
-	sc := NewStack(func(data interface{}, _ Stacks) interface{} {
+	sc := NewStack(func(_ Stacks, data interface{}) interface{} {
 		if data != 1 {
 			t.Fatal("Value is incorrect,expected 1", data)
 		}
 		return data.(int) * 10
 	})
 
-	gs := sc.Stack(func(data interface{}, _ Stacks) interface{} {
+	gs := sc.Stack(func(_ Stacks, data interface{}) interface{} {
 		if data != 20 {
 			t.Fatal("Value is incorrect:", data)
 		}
@@ -77,18 +77,18 @@ func TestLiftApply(t *testing.T) {
 }
 
 func TestCall(t *testing.T) {
-	sc := NewStack(func(data interface{}, _ Stacks) interface{} {
+	sc := NewStack(func(_ Stacks, data interface{}) interface{} {
 		return data.(int) * 20
 	})
 
-	gs := sc.Stack(func(data interface{}, _ Stacks) interface{} {
+	gs := sc.Stack(func(_ Stacks, data interface{}) interface{} {
 		if data != 400 {
 			t.Fatal("Value is incorrect:", data)
 		}
 		return data.(int) / 10
 	}, true)
 
-	_ = gs.Stack(func(data interface{}, _ Stacks) interface{} {
+	_ = gs.Stack(func(_ Stacks, data interface{}) interface{} {
 		if data != 40 {
 			t.Fatal("Value is incorrect:", data)
 		}
@@ -101,11 +101,11 @@ func TestCall(t *testing.T) {
 }
 
 func TestIsolate(t *testing.T) {
-	sc := NewStack(func(data interface{}, _ Stacks) interface{} {
+	sc := NewStack(func(_ Stacks, data interface{}) interface{} {
 		return data.(int) * 20
 	})
 
-	_ = sc.Stack(func(data interface{}, _ Stacks) interface{} {
+	_ = sc.Stack(func(_ Stacks, data interface{}) interface{} {
 		t.Fatal("Stack was called,this is bad")
 		return data.(int) / 20
 	}, true)
@@ -116,7 +116,7 @@ func TestIsolate(t *testing.T) {
 }
 
 func TestIdentity(t *testing.T) {
-	gs := NewStack(func(data interface{}, _ Stacks) interface{} {
+	gs := NewStack(func(_ Stacks, data interface{}) interface{} {
 		return data.(int) * 20
 	})
 
@@ -126,7 +126,7 @@ func TestIdentity(t *testing.T) {
 }
 
 func TestStackers(t *testing.T) {
-	sc := NewStack(func(data interface{}, _ Stacks) interface{} {
+	sc := NewStack(func(_ Stacks, data interface{}) interface{} {
 		nm, ok := data.(int)
 		if !ok {
 			t.Fatalf("invalid type: expected int got %+s", data)
@@ -136,7 +136,7 @@ func TestStackers(t *testing.T) {
 		return nm
 	})
 
-	g := sc.Stack(func(data interface{}, _ Stacks) interface{} {
+	g := sc.Stack(func(_ Stacks, data interface{}) interface{} {
 		return data
 	}, true)
 
@@ -144,7 +144,7 @@ func TestStackers(t *testing.T) {
 	defer g.Call(82)
 	// defer g.Close()
 
-	_ = sc.Stack(func(data interface{}, _ Stacks) interface{} {
+	_ = sc.Stack(func(_ Stacks, data interface{}) interface{} {
 		return 20
 	}, true)
 

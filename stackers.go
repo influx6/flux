@@ -12,19 +12,39 @@ type (
 	HalfStackable func(interface{})
 
 	//Stackable defines a stackable function type that can return a value
-	Stackable func(interface{}, Stacks) interface{}
+	Stackable func(Stacks, interface{}) interface{}
 
-	//Stacks provides the finite definition of function stacks
-	Stacks interface {
-		Stack(Stackable, bool) Stacks
-		Listen(HalfStackable) Stacks
-		Unstack()
+	//MultiStackable defines a stackable function type that can return a value but accepts multi-arguments
+	MultiStackable func(Stacks, ...interface{}) interface{}
 
+	//NStacks provides a variation over the stack implementation for multi-argument functions
+	// NStacks interface {
+	// 	//Identity applies the same arguments to all connected stacks
+	// 	Identity(...interface{}) interface{}
+	//
+	// 	//isolate applies to this stack only and does not propagate the value to other stacks
+	// 	Isolate(...interface{}) interface{}
+	//
+	// 	//Call runs the value, returning the return value of just this particular stacks return value
+	// 	Call(...interface{}) interface{}
+	//
+	// 	//Apply applies the value, returning the values of either this stack or the child stacks if any exists
+	// 	Apply(...interface{}) interface{}
+	//
+	// 	//Lift lifts this value up the root stack for use with the root .Apply() function(allows you to call a root .Apply() method from anylevel of the stack)
+	// 	Lift(...interface{}) interface{}
+	//
+	// 	//LiftApply calls the stack from bottom up and takes the result from a lower stack to apply to its parent stack and returns the root return value
+	// 	LiftApply(...interface{}) interface{}
+	//
+	// 	//Levitate calls the stack from bottom up feeding the root with the returned value from the child but returns the child returned value
+	// 	Levitate(...interface{}) interface{}
+	// }
+
+	//OneStack defines emission function taking only one argument
+	OneStack interface {
 		//Isolate applies to this stack only and does not propagate the value to other stacks
 		Isolate(interface{}) interface{}
-
-		//Identity returns the value apply to it as the return value
-		Identity(interface{}) interface{}
 
 		//Call runs the value, returning the return value of just this particular stacks return value
 		Call(interface{}) interface{}
@@ -41,6 +61,18 @@ type (
 		//Levitate calls the stack from bottom up feeding the root with the returned value from the child but returns the child returned value
 		Levitate(interface{}) interface{}
 
+		//Identity applies the same arguments to all connected stacks
+		Identity(interface{}) interface{}
+	}
+
+	//Stacks provides the finite definition of function stacks
+	Stacks interface {
+		// NStacks
+		OneStack
+		Stack(Stackable, bool) Stacks
+		Listen(HalfStackable) Stacks
+		Unstack()
+		// MaxArgs() int
 		//Channel returns a receive only channel for notification instead of using the callback approach with Listen or stack
 		Channel() <-chan interface{}
 
@@ -67,6 +99,7 @@ type (
 		wrap   *StackWrap
 		root   Stacks
 		active int64
+		args   int
 	}
 
 	//StackStreamers provides a streaming function for stacks member rules
@@ -97,12 +130,39 @@ type (
 	}
 )
 
-var (
-	//StackableIdentity provides an identity function for stacks
-	StackableIdentity = func(b interface{}, _ Stacks) interface{} {
-		return b
+//WrapStackable takes a function and turns it to a Stackable
+func WrapStackable(fx func(interface{}) interface{}) Stackable {
+	return func(_ Stacks, x interface{}) interface{} {
+		return fx(x)
 	}
-)
+}
+
+//WrapNArg wraps a multiarg function into a single arg function
+func WrapNArg(max int, fx MultiStackable) Stackable {
+	return func(s Stacks, x interface{}) interface{} {
+		mset, ok := x.([]interface{})
+
+		if ok {
+			return fx(s, mset[:max]...)
+		}
+
+		var oset []interface{}
+		oset = append(oset, x)
+		return fx(s, oset...)
+	}
+}
+
+//WrapNStackable wraps a multiarg function to a mult-arg stackable function
+func WrapNStackable(max int, fx func(...interface{}) interface{}) Stackable {
+	return WrapNArg(max, func(_ Stacks, b ...interface{}) interface{} {
+		return fx(b...)
+	})
+}
+
+//StackableIdentity provides an identity function for stacks
+func StackableIdentity(_ Stacks, b interface{}) interface{} {
+	return b
+}
 
 //ReportCard returns a new StackReport instance, generally ensure its a good max so you can get reports without over-filling the stack,if the stack is full then old reports would be discard
 func ReportCard(max int) *StackReport {
@@ -193,7 +253,7 @@ func (s *StackStream) Write(bu []byte) (int, error) {
 
 //StreamWriter streams to a writer
 func (s *StackStream) StreamWriter(w io.Writer) Stacks {
-	return s.Stack(func(data interface{}, _ Stacks) interface{} {
+	return s.Stack(func(_ Stacks, data interface{}) interface{} {
 		buff, ok := data.([]byte)
 
 		if !ok {
@@ -269,16 +329,36 @@ func NewStackWrap(fn Stackable, own Stacks, fx func()) *StackWrap {
 func NewStack(fn Stackable) (s *Stack) {
 	s = &Stack{
 		active: 1,
+		args:   1,
 	}
 
 	s.wrap = NewStackWrap(fn, s, nil)
 	return
 }
 
+// //NArgStack returns a new stack
+// func NArgStack(max int, fn MultiStackable) (s *Stack) {
+// 	if max <= 0 {
+// 		max = 1
+// 	}
+// 	s = &Stack{
+// 		active: 1,
+// 		args:   max,
+// 	}
+//
+// 	s.wrap = NewStackWrap(WrapNArg(max, fn), s, nil)
+// 	return
+// }
+
 //IdentityStack returns a stack that returns its values
 func IdentityStack() *Stack {
 	return NewStack(StackableIdentity)
 }
+
+// //MaxArgs returns the maximum argument this stack takes
+// func (s *Stack) MaxArgs() int {
+// 	return s.args
+// }
 
 //Isolate applies to this stack only and does not propagate the value to other stacks
 func (s *Stack) Isolate(b interface{}) interface{} {
@@ -289,15 +369,15 @@ func (s *Stack) Isolate(b interface{}) interface{} {
 		return nil
 	}
 
-	res := b
+	var res interface{}
 	state := atomic.LoadInt64(&s.active)
 	if state > 0 {
-		res = s.wrap.Fn(b, s)
+		res = s.wrap.Fn(s, b)
 	}
 	return res
 }
 
-//Identity sends a data into the stack and returns the value supplied,like apply a matrix op V * I = V
+//Identity runs the value returning the return value of just this particular stacks return value
 func (s *Stack) Identity(b interface{}) interface{} {
 	if b == nil {
 		return nil
@@ -306,10 +386,10 @@ func (s *Stack) Identity(b interface{}) interface{} {
 		return nil
 	}
 
-	// res := b
+	var res interface{}
 	state := atomic.LoadInt64(&s.active)
 	if state > 0 {
-		_ = s.wrap.Fn(b, s)
+		res = s.wrap.Fn(s, b)
 		if s.wrap != nil {
 			if s.wrap.next != nil {
 				if s.wrap.next.owner != nil {
@@ -318,8 +398,7 @@ func (s *Stack) Identity(b interface{}) interface{} {
 			}
 		}
 	}
-
-	return b
+	return res
 }
 
 //Call runs the value returning the return value of just this particular stacks return value
@@ -331,10 +410,10 @@ func (s *Stack) Call(b interface{}) interface{} {
 		return nil
 	}
 
-	res := b
+	var res interface{}
 	state := atomic.LoadInt64(&s.active)
 	if state > 0 {
-		res = s.wrap.Fn(b, s)
+		res = s.wrap.Fn(s, b)
 		if s.wrap != nil {
 			if s.wrap.next != nil {
 				if s.wrap.next.owner != nil {
@@ -356,10 +435,10 @@ func (s *Stack) Apply(b interface{}) interface{} {
 		return nil
 	}
 
-	res := b
+	var res interface{}
 	state := atomic.LoadInt64(&s.active)
 	if state > 0 {
-		res = s.wrap.Fn(b, s)
+		res = s.wrap.Fn(s, b)
 		if s.wrap != nil {
 			if s.wrap.next != nil {
 				if s.wrap.next.owner != nil {
@@ -396,7 +475,7 @@ func (s *Stack) Levitate(b interface{}) interface{} {
 		return nil
 	}
 
-	res := s.wrap.Fn(b, s)
+	res := s.wrap.Fn(s, b)
 
 	if s.root != nil {
 		s.root.Levitate(res)
@@ -415,7 +494,7 @@ func (s *Stack) LiftApply(b interface{}) interface{} {
 		return nil
 	}
 
-	res := s.wrap.Fn(b, s)
+	res := s.wrap.Fn(s, b)
 
 	if s.root != nil {
 		return s.root.LiftApply(res)
@@ -457,7 +536,7 @@ func (s *Stack) getWrap() *StackWrap {
 
 //Listen builds a new stack from this previous stack
 func (s *Stack) Listen(fn HalfStackable) Stacks {
-	return s.Stack(func(b interface{}, _ Stacks) interface{} {
+	return s.Stack(func(_ Stacks, b interface{}) interface{} {
 		fn(b)
 		return b
 	}, true)
@@ -511,7 +590,7 @@ func (s *Stack) Stack(fn Stackable, connectClose bool) Stacks {
 
 //LogStack takes a stack and logs all input coming from it
 func LogStack(s Stacks) Stacks {
-	return s.Stack(func(data interface{}, _ Stacks) interface{} {
+	return s.Stack(func(_ Stacks, data interface{}) interface{} {
 		log.Printf("LogStack: %+s", data)
 		return data
 	}, true)
@@ -519,7 +598,7 @@ func LogStack(s Stacks) Stacks {
 
 //LogHeader takes a stack and logs all input from it
 func LogHeader(s Stacks, header string) Stacks {
-	return s.Stack(func(data interface{}, _ Stacks) interface{} {
+	return s.Stack(func(_ Stacks, data interface{}) interface{} {
 		log.Printf(header, data)
 		return data
 	}, true)
@@ -527,7 +606,7 @@ func LogHeader(s Stacks, header string) Stacks {
 
 //LogStackWith logs all input using a custom logger
 func LogStackWith(s Stacks, l *log.Logger) Stacks {
-	return s.Stack(func(data interface{}, _ Stacks) interface{} {
+	return s.Stack(func(_ Stacks, data interface{}) interface{} {
 		l.Printf("LogStack: %+s", data)
 		return data
 	}, true)
@@ -560,4 +639,26 @@ func CombineStacks(mo ...Stacks) Stacks {
 	}
 
 	return co
+}
+
+//FeedStacks returns a new stack
+func FeedStacks(mi, mo Stacks, kill bool) Stacks {
+	return mi.Stack(func(_ Stacks, b interface{}) interface{} {
+		return mo.Apply(b)
+	}, kill)
+}
+
+//FeedAllStacks returns a new stack
+func FeedAllStacks(kill bool, m ...Stacks) Stacks {
+	var rs Stacks
+
+	for _, m := range m {
+		if rs == nil {
+			rs = m
+			continue
+		}
+		rs = FeedStacks(rs, m, kill)
+	}
+
+	return rs
 }
