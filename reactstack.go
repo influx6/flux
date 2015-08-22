@@ -172,8 +172,10 @@ func (r *ReactiveStack) End() {
 	}
 
 	GoDefer("CloseReact", func() {
-		r.root.detach()
 		close(r.closed)
+		if r.root != nil {
+			r.root.detach()
+		}
 		atomic.StoreInt64(&r.finished, 1)
 	})
 }
