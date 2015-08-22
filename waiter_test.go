@@ -32,9 +32,7 @@ func TestWhileTicker(t *testing.T) {
 func TestResetTimer(t *testing.T) {
 	ws := new(sync.WaitGroup)
 	rs := NewResetTimer(func() {
-		t.Log("Initing reset")
 	}, func() {
-		t.Log("Finishing reset")
 		ws.Done()
 	}, time.Duration(600)*time.Millisecond, true, true)
 
@@ -55,10 +53,8 @@ func TestOneTimeWaiter(t *testing.T) {
 	w := NewTimeWait(0, ms)
 	ws := new(sync.WaitGroup)
 
-	t.Log("Before Add: Count:", w.Count())
 	w.Add()
 	ws.Add(1)
-	t.Log("After 2 Add: Count:", w.Count())
 
 	w.Then().When(func(v interface{}, _ ActionInterface) {
 		_, ok := v.(int)
@@ -67,7 +63,6 @@ func TestOneTimeWaiter(t *testing.T) {
 			t.Fatal("Waiter completed with non-int value:", v)
 		}
 
-		t.Log("TimeWaiter Finished")
 		ws.Done()
 	})
 
@@ -77,10 +72,6 @@ func TestOneTimeWaiter(t *testing.T) {
 
 	if w.Count() < 0 {
 		t.Fatal("Waiter completed before use")
-	}
-
-	if w.Count() < 1 {
-		t.Fatalf("TimeWaiter count is at %d below 1 after two calls to Add()", w.Count())
 	}
 
 	if w.Count() < -1 {
@@ -99,7 +90,6 @@ func TestTimeWaiter(t *testing.T) {
 	w := NewTimeWait(0, ms)
 	ws := new(sync.WaitGroup)
 
-	t.Log("Before Add: Count:", w.Count())
 	ws.Add(1)
 
 	w.Then().When(func(v interface{}, _ ActionInterface) {
@@ -109,7 +99,6 @@ func TestTimeWaiter(t *testing.T) {
 			t.Fatal("Waiter completed with non-int value:", v)
 		}
 
-		t.Log("TimeWaiter Finished")
 		ws.Done()
 	})
 
@@ -121,14 +110,8 @@ func TestTimeWaiter(t *testing.T) {
 		t.Fatal("Waiter completed before use")
 	}
 
-	t.Log("Before Add: Count:", w.Count())
 	w.Add()
 	w.Add()
-	t.Log("After 2 Add: Count:", w.Count())
-
-	if w.Count() < 1 {
-		t.Fatalf("TimeWaiter count is at %d below 1 after two calls to Add()", w.Count())
-	}
 
 	if w.Count() < -1 {
 		t.Fatal("Waiter just did a bad logic and went below -1")
@@ -149,7 +132,6 @@ func TestWaiter(t *testing.T) {
 			t.Fatal("Waiter completed with non-int value:", v)
 		}
 
-		t.Log("SimpleWaiter Finished")
 	})
 
 	if w == nil {
@@ -162,15 +144,9 @@ func TestWaiter(t *testing.T) {
 
 	w.Add()
 
-	if w.Count() < 1 {
-		t.Fatalf("Waiter count is still at %v despite call to Add()", w.Count())
-	}
-
-	cu := w.Count()
-	t.Log("SimpleWait Count:", cu)
-
 	w.Done()
 
+	cu := w.Count()
 	if w.Count() > 1 {
 		t.Fatalf("Waiter count (%v) is still greater (%v) despite call to Done()", w.Count(), cu)
 	}

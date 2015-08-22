@@ -25,13 +25,13 @@ type (
 
 	//ReactiveStack provides a concrete implementation
 	ReactiveStack struct {
-		in, out chan Signal
-		closed  chan struct{}
-		errs    chan error
-		op      ReactiveOp
-		root    ReactiveStacks
-		next    ReactiveStacks
-		started int64
+		in, out           chan Signal
+		closed            chan struct{}
+		errs              chan error
+		op                ReactiveOp
+		root              ReactiveStacks
+		next              ReactiveStacks
+		started, finished int64
 	}
 )
 
@@ -112,7 +112,7 @@ func (r *ReactiveStack) Feed() ReactiveStacks {
 
 //HasChild returns true/false if its has a chain
 func (r *ReactiveStack) HasChild() bool {
-	return r.next == nil
+	return r.next != nil
 }
 
 //Parent returns the parent reativestack
@@ -138,9 +138,13 @@ func (r *ReactiveStack) React(fx ReactiveOp) ReactiveStacks {
 
 //End signals to the next stack its closing
 func (r *ReactiveStack) End() {
+
+	if r.finished > 0 {
+		return
+	}
+
 	GoDefer("CloseReact", func() {
 		close(r.closed)
-		// close(r.in)
-		// close(r.out)
+		atomic.StoreInt64(&r.finished, 1)
 	})
 }
