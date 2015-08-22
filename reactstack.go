@@ -64,7 +64,7 @@ func ReactIdentity() ReactiveStacks {
 					break iloop
 				case data := <-self.In():
 					if self.HasChild() {
-						self.Out() <- data
+						go func() { self.Out() <- data }()
 					} else {
 						data = nil
 					}
