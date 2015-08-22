@@ -36,9 +36,9 @@ type (
 	}
 )
 
-//ReactReceive returns a reactor that only sends it in to its out
-func ReactReceive() ReactiveStacks {
-	return Reactive(func(self ReactiveStacks) {
+//ReactReceive returns a react operator
+func ReactReceive() ReactiveOp {
+	return func(self ReactiveStacks) {
 		func() {
 		iloop:
 			for {
@@ -50,7 +50,7 @@ func ReactReceive() ReactiveStacks {
 				}
 			}
 		}()
-	}, nil)
+	}
 }
 
 //ReactIdentity returns a reactor that only sends it in to its out
