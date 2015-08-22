@@ -16,10 +16,11 @@ type (
 		Out() chan Signal
 		Error() <-chan error
 		Closed() <-chan struct{}
-		Feeds() ReactiveStacks
+		Feed() ReactiveStacks
+		HasChild() bool
+		// Child() ReactiveStacks
 		React(ReactiveOp) ReactiveStacks
 		End()
-		// ForceRun()
 	}
 
 	//ReactiveStack provides a concrete implementation
@@ -44,7 +45,11 @@ func ReactIdentity() ReactiveStacks {
 				case <-self.Closed():
 					break iloop
 				case data := <-self.In():
-					self.Out() <- data
+					if self.HasChild() {
+						self.Out() <- data
+					} else {
+						data = nil
+					}
 				}
 			}
 		}()
@@ -100,10 +105,24 @@ func (r *ReactiveStack) Error() <-chan error {
 	return r.errs
 }
 
-//Feeds returns the parent reativestack
-func (r *ReactiveStack) Feeds() ReactiveStacks {
+//Feed returns the parent reativestack
+func (r *ReactiveStack) Feed() ReactiveStacks {
 	return r.root
 }
+
+//HasChild returns true/false if its has a chain
+func (r *ReactiveStack) HasChild() bool {
+	return r.next == nil
+}
+
+//Parent returns the parent reativestack
+// func (r *ReactiveStack) Parent() ReactiveStacks {
+// 	return r.root
+// }
+//Child returns the next reativestack
+// func (r *ReactiveStack) Child() ReactiveStacks {
+// 	return r.next
+// }
 
 //React creates a reactivestack from this current one
 func (r *ReactiveStack) React(fx ReactiveOp) ReactiveStacks {
