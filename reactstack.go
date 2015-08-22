@@ -43,8 +43,13 @@ func ReactReceive() ReactiveOp {
 		iloop:
 			for {
 				select {
+				case <-self.Feed().Closed():
+					self.End()
+					break iloop
 				case <-self.Closed():
 					break iloop
+				case data := <-self.Feed().Out():
+					self.Out() <- data
 				case data := <-self.In():
 					self.Out() <- data
 				}
