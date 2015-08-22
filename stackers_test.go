@@ -115,15 +115,15 @@ func TestIsolate(t *testing.T) {
 	}
 }
 
-func TestIdentity(t *testing.T) {
-	gs := NewStack(func(_ Stacks, data interface{}) interface{} {
-		return data.(int) * 20
-	})
-
-	if val := gs.Identity(20); val != 20 {
-		t.Fatal("Return value is incorrect:", val)
-	}
-}
+// func TestIdentity(t *testing.T) {
+// 	gs := NewStack(func(_ Stacks, data interface{}) interface{} {
+// 		return data.(int) * 20
+// 	})
+//
+// 	if val := gs.Identity(20); val != 20 {
+// 		t.Fatal("Return value is incorrect:", val)
+// 	}
+// }
 
 func TestStackers(t *testing.T) {
 	sc := NewStack(func(_ Stacks, data interface{}) interface{} {
