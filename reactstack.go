@@ -21,6 +21,7 @@ type (
 		// Child() ReactiveStacks
 		React(ReactiveOp) ReactiveStacks
 		End()
+		detach()
 	}
 
 	//ReactiveStack provides a concrete implementation
@@ -95,6 +96,10 @@ func Reactive(fx ReactiveOp, root ReactiveStacks) *ReactiveStack {
 	return r
 }
 
+func (r *ReactiveStack) detach() {
+	r.next = nil
+}
+
 //ForceRun forces the immediate start of the reactor
 func (r *ReactiveStack) boot() {
 	//bootup this reactor
@@ -167,6 +172,7 @@ func (r *ReactiveStack) End() {
 	}
 
 	GoDefer("CloseReact", func() {
+		r.root.detach()
 		close(r.closed)
 		atomic.StoreInt64(&r.finished, 1)
 	})
