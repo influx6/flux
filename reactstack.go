@@ -28,12 +28,30 @@ type (
 		in, out           chan Signal
 		closed            chan struct{}
 		errs              chan error
+		flow              bool
 		op                ReactiveOp
 		root              ReactiveStacks
 		next              ReactiveStacks
 		started, finished int64
 	}
 )
+
+//ReactReceive returns a reactor that only sends it in to its out
+func ReactReceive() ReactiveStacks {
+	return Reactive(func(self ReactiveStacks) {
+		func() {
+		iloop:
+			for {
+				select {
+				case <-self.Closed():
+					break iloop
+				case data := <-self.In():
+					self.Out() <- data
+				}
+			}
+		}()
+	}, nil)
+}
 
 //ReactIdentity returns a reactor that only sends it in to its out
 func ReactIdentity() ReactiveStacks {
