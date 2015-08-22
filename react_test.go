@@ -4,17 +4,7 @@ import "testing"
 
 func TestReactiveStack(t *testing.T) {
 
-	gen := Reactive(func(r ReactiveStacks) {
-	ml:
-		for {
-			select {
-			case c := <-r.In():
-				r.Out() <- c.(int)
-			case <-r.Closed():
-				break ml
-			}
-		}
-	}, nil)
+	gen := ReactIdentity()
 
 	go func() {
 	mloop:

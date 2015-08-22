@@ -34,6 +34,23 @@ type (
 	}
 )
 
+//ReactIdentity returns a reactor that only sends it in to its out
+func ReactIdentity() ReactiveStacks {
+	return Reactive(func(self ReactiveStacks) {
+		func() {
+		iloop:
+			for {
+				select {
+				case <-self.Closed():
+					break iloop
+				case data := <-self.In():
+					self.Out() <- data
+				}
+			}
+		}()
+	}, nil)
+}
+
 //Reactive returns a ReactiveStacks,the process is not started immediately if no root exists,to force it,call .ForceRun()
 func Reactive(fx ReactiveOp, root ReactiveStacks) *ReactiveStack {
 	r := &ReactiveStack{
