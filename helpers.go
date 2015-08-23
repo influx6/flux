@@ -11,7 +11,18 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"time"
 )
+
+//ToDuration returns the duration in millisecond of a given time from the current time
+func ToDuration(ms time.Time) time.Duration {
+	return Elapsed(ms, time.Now())
+}
+
+//Elapsed takes a time and delta it from the current time to return a duration in milliseconds
+func Elapsed(ms time.Time, diff time.Time) time.Duration {
+	return time.Duration(diff.UTC().Sub(ms).Nanoseconds() / 1e6)
+}
 
 //FileCloser provides a means of closing a file
 type FileCloser struct {
