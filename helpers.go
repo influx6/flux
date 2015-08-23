@@ -21,7 +21,7 @@ func ToDuration(ms time.Time) time.Duration {
 
 //Elapsed takes a time and delta it from the current time to return a duration in milliseconds
 func Elapsed(ms time.Time, diff time.Time) time.Duration {
-	return time.Duration(ElapsedIn(ms, diff)) * time.Millisecond
+	return Elapsed(ms, diff) * time.Millisecond
 }
 
 //ElapsedIn returns the elapsed time in int64
