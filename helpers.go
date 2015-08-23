@@ -21,7 +21,12 @@ func ToDuration(ms time.Time) time.Duration {
 
 //Elapsed takes a time and delta it from the current time to return a duration in milliseconds
 func Elapsed(ms time.Time, diff time.Time) time.Duration {
-	return time.Duration(diff.UTC().Sub(ms.UTC()).Nanoseconds() / 1e6)
+	return time.Duration(ElapsedIn(ms, diff)) * time.Millisecond
+}
+
+//ElapsedIn returns the elapsed time in int64
+func ElapsedIn(ms time.Time, diff time.Time) int64 {
+	return diff.UTC().Sub(ms.UTC()).Nanoseconds() / 1e6
 }
 
 //FileCloser provides a means of closing a file
