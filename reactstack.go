@@ -1,6 +1,9 @@
 package flux
 
-import "sync/atomic"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 type (
 
@@ -17,8 +20,6 @@ type (
 		Error() <-chan error
 		Closed() <-chan struct{}
 		Feed() ReactiveStacks
-		HasChild() bool
-		// Child() ReactiveStacks
 		React(ReactiveOp) ReactiveStacks
 		End()
 		detach()
@@ -32,10 +33,128 @@ type (
 		flow              bool
 		op                ReactiveOp
 		root              ReactiveStacks
-		next              ReactiveStacks
+		mux               *ReactiveMultiplier
 		started, finished int64
 	}
+
+	//ReactiveProxy creates a proxy over a root reactor
+	reactiveProxy struct {
+		ReactiveStacks
+		index int
+		pout  chan Signal
+		mul   *ReactiveMultiplier
+	}
+
+	//ReactiveMultiplier creates a multi-distributor for reactors
+	ReactiveMultiplier struct {
+		root    ReactiveStacks
+		multis  []*reactiveProxy
+		rw      *sync.RWMutex
+		openids []int
+	}
 )
+
+//NewReactiveProxy returns a reactive proxy
+func NewReactiveProxy(ro *ReactiveMultiplier, ind int) *reactiveProxy {
+	return &reactiveProxy{
+		ReactiveStacks: ro.root,
+		pout:           make(chan Signal),
+		mul:            ro,
+		index:          ind,
+	}
+}
+
+//NewMultiplier returns a new ReactiveMultiplier
+func NewMultiplier(ro ReactiveStacks) (rr *ReactiveMultiplier) {
+
+	rfx := func(self ReactiveStacks) {
+		func() {
+		iloop:
+			for {
+				select {
+				case <-self.Feed().Closed():
+					self.End()
+					break iloop
+				case <-self.Closed():
+					break iloop
+				case data := <-self.Feed().Out():
+					rr.handleMessage(data)
+				case data := <-self.In():
+					rr.handleMessage(data)
+				}
+			}
+		}()
+	}
+
+	rod := &ReactiveStack{
+		in:     make(chan Signal),
+		out:    make(chan Signal),
+		closed: make(chan struct{}),
+		errs:   make(chan error),
+		op:     rfx,
+		root:   ro,
+	}
+
+	rr = &ReactiveMultiplier{
+		root: rod,
+		rw:   new(sync.RWMutex),
+	}
+
+	rod.boot()
+
+	return
+}
+
+func (r *ReactiveMultiplier) handleMessage(d Signal) {
+	if len(r.multis) <= 0 {
+		return
+	}
+
+	r.rw.RLock()
+	defer r.rw.RUnlock()
+
+	for _, fxm := range r.multis {
+		if fxm == nil {
+			continue
+		}
+		func(rm *reactiveProxy, signal Signal) {
+			GoDefer("deliver-to-proxy", func() {
+				rm.pout <- signal
+			})
+		}(fxm, d)
+	}
+}
+
+//Remove unsets the proxy at the id and frees for reuse
+func (r *ReactiveMultiplier) remove(d int) {
+	r.rw.RLock()
+	r.multis[d] = nil
+	r.rw.RUnlock()
+	r.openids = append(r.openids, d)
+}
+
+//React creates a reactivestack from this current one
+func (r *ReactiveMultiplier) React(fx ReactiveOp) ReactiveStacks {
+	var opx *reactiveProxy
+
+	sz := len(r.multis)
+	osz := len(r.openids)
+
+	if osz > 0 {
+		ind := r.openids[osz-1]
+		r.openids = r.openids[:osz]
+
+		opx = NewReactiveProxy(r, ind)
+		r.multis[ind] = opx
+	} else {
+		r.openids = r.openids[:0]
+		opx = NewReactiveProxy(r, sz)
+		r.multis = append(r.multis, opx)
+	}
+
+	// Reactive(fx, r)
+	return Reactive(fx, opx)
+}
 
 //ReactReceive returns a react operator
 func ReactReceive() ReactiveOp {
@@ -50,9 +169,9 @@ func ReactReceive() ReactiveOp {
 				case <-self.Closed():
 					break iloop
 				case data := <-self.Feed().Out():
-					self.Out() <- data
+					go func() { self.Out() <- data }()
 				case data := <-self.In():
-					self.Out() <- data
+					go func() { self.Out() <- data }()
 				}
 			}
 		}()
@@ -68,12 +187,13 @@ func ReactIdentity() ReactiveStacks {
 				select {
 				case <-self.Closed():
 					break iloop
-				case data := <-self.In():
-					if self.HasChild() {
-						go func() { self.Out() <- data }()
-					} else {
-						data = nil
+				case data, ok := <-self.In():
+					if !ok {
+						return
 					}
+					go func() {
+						self.Out() <- data
+					}()
 				}
 			}
 		}()
@@ -91,13 +211,19 @@ func Reactive(fx ReactiveOp, root ReactiveStacks) *ReactiveStack {
 		root:   root,
 	}
 
+	r.mux = NewMultiplier(r)
+
 	r.boot()
 
 	return r
 }
 
+func (r *reactiveProxy) detach() {
+	r.mul.remove(r.index)
+}
+
 func (r *ReactiveStack) detach() {
-	r.next = nil
+	// r.next = nil
 }
 
 //ForceRun forces the immediate start of the reactor
@@ -123,6 +249,11 @@ func (r *ReactiveStack) Out() chan Signal {
 	return r.out
 }
 
+//Out returns the out-put pipe of the proxy
+func (r *reactiveProxy) Out() chan Signal {
+	return r.pout
+}
+
 //Closed returns the error pipe
 func (r *ReactiveStack) Closed() <-chan struct{} {
 	return r.closed
@@ -138,30 +269,9 @@ func (r *ReactiveStack) Feed() ReactiveStacks {
 	return r.root
 }
 
-//HasChild returns true/false if its has a chain
-func (r *ReactiveStack) HasChild() bool {
-	return r.next != nil
-}
-
-//Parent returns the parent reativestack
-// func (r *ReactiveStack) Parent() ReactiveStacks {
-// 	return r.root
-// }
-//Child returns the next reativestack
-// func (r *ReactiveStack) Child() ReactiveStacks {
-// 	return r.next
-// }
-
 //React creates a reactivestack from this current one
 func (r *ReactiveStack) React(fx ReactiveOp) ReactiveStacks {
-
-	if r.next != nil {
-		return r.next.React(fx)
-	}
-
-	r.next = Reactive(fx, r)
-
-	return r.next
+	return r.mux.React(fx)
 }
 
 //End signals to the next stack its closing
@@ -171,11 +281,16 @@ func (r *ReactiveStack) End() {
 		return
 	}
 
+	atomic.StoreInt64(&r.finished, 1)
 	GoDefer("CloseReact", func() {
 		close(r.closed)
+		close(r.in)
+		close(r.out)
+		r.in = nil
+		r.out = nil
+
 		if r.root != nil {
 			r.root.detach()
 		}
-		atomic.StoreInt64(&r.finished, 1)
 	})
 }

@@ -1,12 +1,12 @@
 package flux
 
 import (
+	"log"
 	"sync"
 	"testing"
 )
 
-//TestBasicReaction provides a test case for a simple two-way reaction i.e receive and react infinitely
-//to data being sent into a pipe until that pipe is closed
+// TestBasicReaction provides a test case for a simple two-way reaction i.e receive and react infinitely to data being sent into a pipe until that pipe is closed
 func TestBasicReaction(t *testing.T) {
 
 	ws := new(sync.WaitGroup)
@@ -31,6 +31,8 @@ func TestBasicReaction(t *testing.T) {
 					ws.Done()
 				case <-k.Feed().Out():
 					ws.Done()
+				case <-k.Closed():
+					break mloop
 				case <-k.Feed().Closed():
 					k.End()
 					break mloop
@@ -45,7 +47,61 @@ func TestBasicReaction(t *testing.T) {
 
 	ws.Wait()
 
+	mn.End()
 	//Reactors are closed by calling the .End() function
 	collect.End()
+}
 
+func TestMultiplier(t *testing.T) {
+	ws := new(sync.WaitGroup)
+
+	//collect is the root reactor
+	mul := ReactIdentity()
+
+	ws.Add(4)
+
+	col := mul.React(ReactReceive())
+
+	GoDefer("Receve1", func() {
+	nl:
+		for {
+			select {
+			case data := <-col.Out():
+				log.Println("received1:", data)
+				ws.Done()
+			case <-col.Closed():
+				log.Println("closing 1")
+				break nl
+			}
+		}
+		// ws.Done()
+	})
+
+	col2 := mul.React(ReactReceive())
+
+	GoDefer("Receive2", func() {
+	nl:
+		for {
+			select {
+			case data := <-col2.Out():
+				log.Println("received2:", data)
+				ws.Done()
+			case <-col2.Closed():
+				log.Println("closing 2")
+				break nl
+			}
+		}
+		// ws.Done()
+	})
+
+	mul.In() <- 3
+	mul.In() <- 40
+
+	// col2.End()
+	// col.End()
+
+	// mul.In() <- 50
+
+	ws.Wait()
+	mul.End()
 }
