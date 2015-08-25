@@ -1,6 +1,8 @@
 package flux
 
 import (
+	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 )
@@ -17,6 +19,7 @@ type (
 	Reactors interface {
 		React(ReactiveOp) Reactors
 		detach()
+		View() ReactorsView
 		IsHooked() bool
 		Send(d Signal)
 		SendClose(d Signal)
@@ -65,17 +68,16 @@ func ReactIdentity() Reactors {
 				}
 			}
 		}()
-	}, nil)
+	})
 }
 
 //Reactive returns a ReactiveStacks,the process is not started immediately if no root exists,to force it,call .ForceRun()
-func Reactive(fx ReactiveOp, root Reactors) *ReactiveStack {
+func Reactive(fx ReactiveOp) *ReactiveStack {
 	r := &ReactiveStack{
 		data:    make(chan Signal),
 		closed:  make(chan Signal),
 		errs:    make(chan error),
 		op:      fx,
-		root:    root,
 		cleaner: new(sync.Once),
 	}
 
@@ -152,10 +154,6 @@ func (r *ReactiveStack) SendClose(d Signal) {
 		return
 	}
 
-	if r.next == nil {
-		return
-	}
-
 	r.closed <- d
 }
 
@@ -227,25 +225,77 @@ func (r *ReactiveStack) React(fx ReactiveOp) Reactors {
 		return r.next.React(fx)
 	}
 
-	r.next = Reactive(fx, r)
+	nx := Reactive(fx)
+	nx.root = r
+
+	r.next = nx
 
 	return r.next
 }
 
 //End signals to the next stack its closing
 func (r *ReactiveStack) End() {
-
 	if r.finished > 0 {
 		return
 	}
 
 	atomic.StoreInt64(&r.finished, 1)
-	GoDefer("CloseReact", func() {
-		if r.root != nil {
-			r.root.detach()
+	if r.root != nil {
+		r.root.detach()
+	}
+	close(r.data)
+	close(r.errs)
+	close(r.closed)
+}
+
+//DistributeSignals takes from one signal and sends it to other reactors
+func DistributeSignals(from Reactors, rs ...Reactors) (m Reactors) {
+	m = from.React(func(view ReactorsView) {
+		defer view.End()
+
+	runloop:
+		for {
+			select {
+			case cd := <-view.Closed():
+				for n, rsd := range rs {
+
+					func(data Signal, ind int, ro Reactors) {
+						GoDefer(fmt.Sprintf("DeliverClose::to(%d)", ind), func() {
+							ro.SendClose(data)
+						})
+					}(cd, n, rsd)
+
+				}
+				break runloop
+			case dd := <-view.Signal():
+				for n, rsd := range rs {
+
+					func(data Signal, ind int, ro Reactors) {
+						GoDefer(fmt.Sprintf("DeliverData::to(%d)", ind), func() {
+							ro.Send(data)
+						})
+					}(dd, n, rsd)
+
+				}
+			case de := <-view.Errors():
+				for n, rsd := range rs {
+
+					func(data Signal, ind int, ro Reactors) {
+						GoDefer(fmt.Sprintf("DeliverError::to(%d)", ind), func() {
+							log.Printf("sending error", ind)
+							ro.Send(data)
+						})
+					}(de, n, rsd)
+
+				}
+			}
 		}
-		close(r.data)
-		close(r.errs)
-		close(r.closed)
 	})
+
+	return
+}
+
+//MergeReactors takes input from serveral reactors and turn it into one signal (a []interface{}) signal type
+func MergeReactors(rs ...Reactors) (m Reactors) {
+	return nil
 }

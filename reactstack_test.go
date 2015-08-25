@@ -1,7 +1,7 @@
 package flux
 
 import (
-	"log"
+	"errors"
 	"sync"
 	"testing"
 )
@@ -16,7 +16,7 @@ func TestBasicReaction(t *testing.T) {
 	//collect is the root reactor
 	collect := ReactIdentity()
 
-	ws.Add(2)
+	ws.Add(3)
 
 	//.React() is the simple approach of branching out from a root reactor,you receive the new reactor its self
 	//but are able to get the parent reactor using the .Feed() function and collect the data from its Out() pipe
@@ -28,13 +28,12 @@ func TestBasicReaction(t *testing.T) {
 		mloop:
 			for {
 				select {
-				case d := <-k.Signal():
-					log.Printf("collect: %s", d)
+				case <-k.Errors():
 					ws.Done()
-				case err := <-k.Errors():
-					log.Printf("collect-error: %s", err.Error())
 				case <-k.Closed():
 					break mloop
+				case <-k.Signal():
+					ws.Done()
 				}
 			}
 		}()
@@ -43,6 +42,7 @@ func TestBasicReaction(t *testing.T) {
 	/*we can emit/send data for reaction using the in-channel returned bythe In() function*/
 	collect.Send(2) //sends data into the root reactor
 	mn.Send(40)     //sends data only into the current reactor
+	collect.SendError(errors.New("sawdust"))
 
 	ws.Wait()
 
@@ -51,34 +51,56 @@ func TestBasicReaction(t *testing.T) {
 	collect.SendClose("sucker")
 }
 
-// func TestMoreReceivers(t *testing.T) {
-// 	ws := new(sync.WaitGroup)
-//
-// 	//collect is the root reactor
-// 	mul := ReactIdentity()
-//
-// 	ws.Add(3)
-//
-// 	mul.React(ReactReceive())
-//
-// 	col2 := mul.React(ReactReceive())
-//
-// 	view := col2.View()
-// 	GoDefer("Receive2", func() {
-// 		for data := range view.Out() {
-// 			log.Println("received2:", data)
-// 			ws.Done()
-// 		}
-// 	})
-//
-// 	mul.Send(3)
-// 	mul.Send(40)
-//
-// 	// col2.End()
-// 	// col.End()
-//
-// 	mul.Send(50)
-//
-// 	ws.Wait()
-// 	mul.End()
-// }
+func TestMoreReceivers(t *testing.T) {
+	ws := new(sync.WaitGroup)
+
+	//master is the root reactor
+	master := ReactIdentity()
+
+	ws.Add(4)
+
+	sl1 := Reactive(func(self ReactorsView) {
+		func() {
+			defer self.End()
+		iloop:
+			for {
+				select {
+				case <-self.Closed():
+					break iloop
+				case <-self.Errors():
+				case <-self.Signal():
+					ws.Done()
+				}
+			}
+		}()
+	})
+
+	sl2 := Reactive(func(self ReactorsView) {
+		func() {
+			defer self.End()
+		iloop:
+			for {
+				select {
+				case <-self.Closed():
+					break iloop
+				case <-self.Errors():
+				case <-self.Signal():
+					ws.Done()
+				}
+			}
+		}()
+	})
+
+	_ = DistributeSignals(master, sl1, sl2)
+
+	master.Send(3)
+	master.Send(40)
+
+	// col2.End()
+	// col.End()
+
+	// master.Send(50)
+
+	ws.Wait()
+	master.SendClose("200")
+}
