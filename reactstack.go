@@ -186,6 +186,10 @@ func (r *ReactiveStack) SendError(d error) {
 		return
 	}
 
+	if r.errs == nil {
+		return
+	}
+
 	if d == nil {
 		return
 	}
@@ -200,6 +204,10 @@ func (r *ReactiveStack) Send(d Signal) {
 		return
 	}
 
+	if r.data == nil {
+		return
+	}
+
 	if d == nil {
 		return
 	}
@@ -211,6 +219,10 @@ func (r *ReactiveStack) Send(d Signal) {
 func (r *ReactiveStack) SendClose(d Signal) {
 	state := atomic.LoadInt64(&r.finished)
 	if state > 0 {
+		return
+	}
+
+	if r.closed == nil {
 		return
 	}
 
@@ -342,6 +354,10 @@ func (r *ReactiveStack) Destroy() {
 	close(r.data)
 	close(r.errs)
 	close(r.closed)
+
+	r.data = nil
+	r.errs = nil
+	r.closed = nil
 }
 
 //DistributeSignals takes from one signal and sends it to other reactors

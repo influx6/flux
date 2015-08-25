@@ -214,6 +214,6 @@ func TestLifters(t *testing.T) {
 	ws.Wait()
 
 	mo.SendClose("200")
-	// mp.SendClose("600")
+	mp.SendClose("600")
 
 }
