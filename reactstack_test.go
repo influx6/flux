@@ -50,9 +50,9 @@ func TestConnect(t *testing.T) {
 		}()
 	})
 
-	ok := collect.Bind(mn)
+	err := collect.Bind(mn)
 
-	if !ok {
+	if err != nil {
 		t.Fatal("Unable to create binding")
 	}
 

@@ -1,52 +1,76 @@
 package flux
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
 )
 
-/*Reactors defines an the idea of continous, reactive change which is a revised implementation of FRP principles with a golang view and approach. Reactors are like a reactive queue where each reactor builds off a previous reactor to allow a simple top-down flow of data.
+var (
+	//ErrFailedBind represent a failure in binding two Reactors
+	ErrFailedBind = errors.New("Failed to Bind Reactors")
+)
+
+/*Reactor defines an the idea of continous, reactive change which is a revised implementation of FRP principles with a golang view and approach. Reactor are like a reactive queue where each reactor builds off a previous reactor to allow a simple top-down flow of data.
 This approach lends itself from very simple streaming operations to complex stream processing systems.
-Due to the use of unbuffered channels, Reactors require that the next keep the rule of the channel contract
+Due to the use of unbuffered channels, Reactor require that the next keep the rule of the channel contract
 .i.e a reactor channel must have someone to collect/listen/retrieve the data within it and
 ensure a continouse operation else close and end the reactor
 */
 
 type (
 
-	//Reactors provides an interface definition for the reactor type to allow compatibility by future extenders when composing with other structs.
-	Reactors interface {
-		detach()
-
+	//Connector defines the core connecting methods used for binding with a Reactor
+	Connector interface {
 		//Bind provides a convenient way of binding 2 reactors
-		Bind(Reactors) bool
-
+		Bind(Reactor) error
 		//React generates a reactor based off its caller
-		React(ReactiveOpHandler) Reactors
+		React(ReactiveOpHandler) Reactor
+	}
+
+	//Replier defines reply methods to reply to requests
+	Replier interface {
+		//reply functions
+		Reply(v interface{})
+		ReplyClose(v interface{})
+		ReplyError(v error)
+	}
+
+	//Sender defines the delivery methods used to deliver data into Reactor process
+	Sender interface {
+		//delivery functions
+		Send(v interface{})
+		SendClose(v interface{})
+		SendError(v error)
+	}
+
+	//SendBinder defines the combination of the Sender and Binding interfaces
+	SendBinder interface {
+		Sender
+		Connector
+	}
+
+	//Reactor provides an interface definition for the reactor type to allow compatibility by future extenders when composing with other structs.
+	Reactor interface {
+		Connector
+		Sender
+		Replier
+
+		Detach()
 
 		//bool functions for ensuring reactors state
 		IsHooked() bool
 		HasRoot() bool
 
-		//delivery functions
-		Send(d interface{})
-		SendClose(d interface{})
-		SendError(d error)
-
-		//reply functions
-		Reply(d interface{})
-		ReplyClose(d interface{})
-		ReplyError(d error)
-
 		//private functions for swapping in reactors
-		useNext(Reactors) bool
-		useRoot(Reactors) bool
+		UseNext(Reactor) error
+		UseRoot(Reactor) error
 	}
 
 	//ReactorsView provides a deeper view in the reactor
 	ReactorsView interface {
-		Reactors
+		Reactor
 		End()
 		Closed() <-chan interface{}
 		Signal() <-chan interface{}
@@ -64,24 +88,23 @@ type (
 		data, closed      chan interface{}
 		errs              chan error
 		op                ReactiveOpHandler
-		root              Reactors
-		next              Reactors
+		root              Reactor
+		next              Reactor
 		started, finished int64
 		ro, rod           sync.Mutex
 	}
 )
 
 //DistributeSignals takes from one signal and sends it to other reactors
-func DistributeSignals(from Reactors, rs ...Reactors) (m Reactors) {
+func DistributeSignals(from Reactor, rs ...Sender) (m Reactor) {
 	m = from.React(func(view ReactorsView) {
 		defer view.End()
-
 	runloop:
 		for {
 			select {
 			case cd := <-view.Closed():
 				for n, rsd := range rs {
-					func(data interface{}, ind int, ro Reactors) {
+					func(data interface{}, ind int, ro Sender) {
 						GoDefer(fmt.Sprintf("DeliverClose::to(%d)", ind), func() {
 							ro.SendClose(data)
 						})
@@ -91,7 +114,7 @@ func DistributeSignals(from Reactors, rs ...Reactors) (m Reactors) {
 			case dd := <-view.Signal():
 				for n, rsd := range rs {
 
-					func(data interface{}, ind int, ro Reactors) {
+					func(data interface{}, ind int, ro Sender) {
 						GoDefer(fmt.Sprintf("DeliverData::to(%d)", ind), func() {
 							ro.Send(data)
 						})
@@ -101,7 +124,7 @@ func DistributeSignals(from Reactors, rs ...Reactors) (m Reactors) {
 			case de := <-view.Errors():
 				for n, rsd := range rs {
 
-					func(data interface{}, ind int, ro Reactors) {
+					func(data interface{}, ind int, ro Sender) {
 						GoDefer(fmt.Sprintf("DeliverError::to(%d)", ind), func() {
 							ro.Send(data)
 						})
@@ -116,14 +139,14 @@ func DistributeSignals(from Reactors, rs ...Reactors) (m Reactors) {
 }
 
 //MergeReactors takes input from serveral reactors and turn it into one signal (a []interface{}) signal type
-func MergeReactors(rs ...Reactors) Reactors {
+func MergeReactors(rs ...SendBinder) Reactor {
 	m := ReactIdentity()
 
 	rdo := new(sync.Mutex)
 	maxcount := len(rs) - 1
 
 	for _, rsm := range rs {
-		func(ro, col Reactors) {
+		func(ro, col SendBinder) {
 			ro.React(func(v ReactorsView) {
 			mop:
 				for {
@@ -151,7 +174,7 @@ func MergeReactors(rs ...Reactors) Reactors {
 }
 
 //LiftReactors takes inputs from each and pipes it to the next reactor
-func LiftReactors(rs ...Reactors) (Reactors, error) {
+func LiftReactors(rs ...Reactor) (Reactor, error) {
 	if len(rs) < 1 {
 		return nil, fmt.Errorf("EmptyArgs: Total Count %d", len(rs))
 	}
@@ -164,7 +187,7 @@ func LiftReactors(rs ...Reactors) (Reactors, error) {
 	rs = rs[1:]
 
 	for _, ro := range rs {
-		func(rx Reactors) {
+		func(rx Reactor) {
 			msl.Bind(rx)
 			msl = rx
 		}(ro)
@@ -174,17 +197,17 @@ func LiftReactors(rs ...Reactors) (Reactors, error) {
 }
 
 //DataReactWith wraps the whole data react operation
-func DataReactWith(mx Reactors, fx SignalMuxHandler) Reactors {
+func DataReactWith(mx Connector, fx SignalMuxHandler) Reactor {
 	return mx.React(DataReactProcessor(fx))
 }
 
 //DataReact returns a reactor that only sends it in to its out
-func DataReact(fx SignalMuxHandler) Reactors {
+func DataReact(fx SignalMuxHandler) Reactor {
 	return Reactive(DataReactProcessor(fx))
 }
 
 // ReactIdentity returns a reactor that only sends it in to its out
-func ReactIdentity() Reactors {
+func ReactIdentity() Reactor {
 	return Reactive(ReactIdentityProcessor())
 }
 
@@ -392,17 +415,17 @@ func (r *ReactiveStack) IsHooked() bool {
 }
 
 //Bind connects a reactor to the next available reactor in the chain that has no binding,you can only bind if the provided reactor has no binding (root) and if the target reactor has no next. A bool value is returned to indicate success or failure
-func (r *ReactiveStack) Bind(fx Reactors) bool {
-	if !r.useNext(fx) {
+func (r *ReactiveStack) Bind(fx Reactor) error {
+	if err := r.UseNext(fx); err != nil {
 		return r.next.Bind(fx)
 	}
 
-	fx.useRoot(r)
-	return true
+	fx.UseRoot(r)
+	return nil
 }
 
 //React creates a reactivestack from this current one
-func (r *ReactiveStack) React(fx ReactiveOpHandler) Reactors {
+func (r *ReactiveStack) React(fx ReactiveOpHandler) Reactor {
 
 	if r.next != nil {
 		return r.next.React(fx)
@@ -419,7 +442,6 @@ func (r *ReactiveStack) React(fx ReactiveOpHandler) Reactors {
 //End signals to the next stack its closing
 func (r *ReactiveStack) End() {
 	state := atomic.LoadInt64(&r.finished)
-
 	if state > 0 {
 		return
 	}
@@ -427,28 +449,32 @@ func (r *ReactiveStack) End() {
 	atomic.StoreInt64(&r.finished, 1)
 
 	if r.root != nil {
-		r.root.detach()
+		r.root.Detach()
+		r.root = nil
 	}
 }
 
-func (r *ReactiveStack) useRoot(fx Reactors) bool {
+//UseRoot allows setting the root Reactor if there is non set
+func (r *ReactiveStack) UseRoot(fx Reactor) error {
 	if r.root != nil {
-		return false
+		return ErrFailedBind
 	}
 	r.root = fx
-	return true
+	return ErrFailedBind
 }
 
-func (r *ReactiveStack) useNext(fx Reactors) bool {
+//UseNext allows setting the next Reactor if there is non set
+func (r *ReactiveStack) UseNext(fx Reactor) error {
 	if r.next != nil {
-		return false
+		return ErrFailedBind
 	}
 
 	r.next = fx
-	return true
+	return nil
 }
 
-func (r *ReactiveStack) detach() {
+//Detach nullifies the next link of this Reactor
+func (r *ReactiveStack) Detach() {
 	r.ro.Lock()
 	r.next = nil
 	r.ro.Unlock()
@@ -468,7 +494,7 @@ func (r *ReactiveStack) boot() {
 }
 
 type (
-	//ChannelStream provides a simple struct for exposing outputs from Reactors to outside
+	//ChannelStream provides a simple struct for exposing outputs from Reactor to outside
 	ChannelStream struct {
 		Close  chan interface{}
 		Data   chan interface{}
@@ -486,12 +512,12 @@ func NewChannelStream() *ChannelStream {
 }
 
 //ChannelReact builds a ChannelStream directly with a Reactor
-func ChannelReact(c *ChannelStream) Reactors {
+func ChannelReact(c *ChannelStream) Reactor {
 	return Reactive(ChannelProcessor(c))
 }
 
 //ChannelReactWith provides a factory to create a Reactor to a channel
-func ChannelReactWith(mx Reactors, c *ChannelStream) Reactors {
+func ChannelReactWith(mx Connector, c *ChannelStream) Reactor {
 	return mx.React(ChannelProcessor(c))
 }
 
