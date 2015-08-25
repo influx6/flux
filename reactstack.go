@@ -177,8 +177,6 @@ func (r *ReactiveStack) Signal() <-chan Signal {
 	return r.data
 }
 
-//TODO fix the issues with sending on a closed channel,must find a way of checking channel state before sending. For SendError,SendClose and Send
-
 //SendError returns the in-put pipe
 func (r *ReactiveStack) SendError(d error) {
 	state := atomic.LoadInt64(&r.finished)
