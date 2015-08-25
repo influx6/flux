@@ -53,9 +53,91 @@ type (
 		root              Reactors
 		next              Reactors
 		started, finished int64
-		ro                *sync.Mutex
+		ro, rod           *sync.Mutex
+	}
+
+	//ChannelCollector provides a data,err and closed channel
+	ChannelCollector struct {
+		signal   chan Signal
+		errors   chan error
+		closed   chan struct{}
+		shutdown int64
 	}
 )
+
+//Close cloes the channel collector
+func (c *ChannelCollector) Close() {
+	atomic.StoreInt64(&c.shutdown, 1)
+}
+
+func (c *ChannelCollector) close() {
+	if c.signal == nil && c.errors == nil {
+		return
+	}
+
+	if c.errors != nil {
+		close(c.errors)
+		c.errors = nil
+	}
+
+	if c.signal != nil {
+		close(c.signal)
+		c.signal = nil
+	}
+
+	close(c.closed)
+}
+
+//Signals returns the signal channel
+func (c *ChannelCollector) Signals() <-chan Signal {
+	return c.signal
+}
+
+//Closed returns the close channel
+func (c *ChannelCollector) Closed() <-chan struct{} {
+	return c.closed
+}
+
+//Errors returns the error channel
+func (c *ChannelCollector) Errors() <-chan error {
+	return c.errors
+}
+
+//SendError emits a data into a collector
+func (c *ChannelCollector) sendError(d error) {
+	if c.errors == nil {
+		return
+	}
+
+	if atomic.LoadInt64(&c.shutdown) <= 0 {
+		c.errors <- d
+		return
+	}
+
+	c.close()
+}
+
+//Send emits a data into a collector
+func (c *ChannelCollector) send(d Signal) {
+	if c.signal == nil {
+		return
+	}
+	if atomic.LoadInt64(&c.shutdown) <= 0 {
+		c.signal <- d
+		return
+	}
+
+	c.close()
+}
+
+//SignalCollector returns a new ChannelCollector
+func SignalCollector() *ChannelCollector {
+	return &ChannelCollector{
+		signal: make(chan Signal),
+		errors: make(chan error),
+		closed: make(chan struct{}),
+	}
+}
 
 //ReactIdentityProcessor provides the ReactIdentity processing op
 func ReactIdentityProcessor() ReactiveOp {
@@ -106,6 +188,35 @@ func DataReactProcessor(fx SignalMux) ReactiveOp {
 	}
 }
 
+//ChannelReactProcessor provides the internal processing ops for sending into a data channel and an error channel which it will closes both provided channels when its gets closed also.
+func ChannelReactProcessor(col *ChannelCollector) ReactiveOp {
+	if col == nil {
+		return nil
+	}
+
+	return func(self ReactorsView) {
+		func() {
+		iloop:
+			for {
+				select {
+				case d := <-self.Closed():
+					go col.Close()
+					self.ReplyClose(d)
+					break iloop
+				case err := <-self.Errors():
+					go col.sendError(err)
+					self.ReplyError(err)
+				case data := <-self.Signal():
+					go col.send(data)
+					self.Reply(data)
+				}
+			}
+			self.End()
+			self.Destroy()
+		}()
+	}
+}
+
 //DataReact returns a reactor that only sends it in to its out
 func DataReact(fx SignalMux) Reactors {
 	return Reactive(DataReactProcessor(fx))
@@ -119,6 +230,7 @@ func Reactive(fx ReactiveOp) *ReactiveStack {
 		errs:   make(chan error),
 		op:     fx,
 		ro:     new(sync.Mutex),
+		rod:    new(sync.Mutex),
 	}
 
 	r.boot()
@@ -184,6 +296,8 @@ func (r *ReactiveStack) SendError(d error) {
 		return
 	}
 
+	r.rod.Lock()
+	defer r.rod.Unlock()
 	if r.errs == nil {
 		return
 	}
@@ -202,6 +316,8 @@ func (r *ReactiveStack) Send(d Signal) {
 		return
 	}
 
+	r.rod.Lock()
+	defer r.rod.Unlock()
 	if r.data == nil {
 		return
 	}
@@ -220,6 +336,8 @@ func (r *ReactiveStack) SendClose(d Signal) {
 		return
 	}
 
+	r.rod.Lock()
+	defer r.rod.Unlock()
 	if r.closed == nil {
 		return
 	}
@@ -345,17 +463,28 @@ func (r *ReactiveStack) End() {
 //Destroy closes the channels after the call to End()
 func (r *ReactiveStack) Destroy() {
 	state := atomic.LoadInt64(&r.finished)
+
 	if state <= 0 {
 		return
 	}
 
-	close(r.data)
-	close(r.errs)
-	close(r.closed)
+	r.rod.Lock()
+	if r.data != nil {
+		close(r.data)
+		r.data = nil
+	}
 
-	r.data = nil
-	r.errs = nil
-	r.closed = nil
+	if r.errs != nil {
+		close(r.errs)
+		r.errs = nil
+	}
+
+	if r.closed != nil {
+		close(r.closed)
+		r.closed = nil
+	}
+	r.rod.Unlock()
+
 }
 
 //DistributeSignals takes from one signal and sends it to other reactors
