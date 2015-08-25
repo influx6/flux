@@ -96,11 +96,6 @@ func TestMoreReceivers(t *testing.T) {
 	master.Send(3)
 	master.Send(40)
 
-	// col2.End()
-	// col.End()
-
-	// master.Send(50)
-
 	ws.Wait()
 	master.SendClose("200")
 }

@@ -239,9 +239,11 @@ func (r *ReactiveStack) End() {
 	}
 
 	atomic.StoreInt64(&r.finished, 1)
+
 	if r.root != nil {
 		r.root.detach()
 	}
+
 	close(r.data)
 	close(r.errs)
 	close(r.closed)
@@ -257,13 +259,11 @@ func DistributeSignals(from Reactors, rs ...Reactors) (m Reactors) {
 			select {
 			case cd := <-view.Closed():
 				for n, rsd := range rs {
-
 					func(data Signal, ind int, ro Reactors) {
 						GoDefer(fmt.Sprintf("DeliverClose::to(%d)", ind), func() {
 							ro.SendClose(data)
 						})
 					}(cd, n, rsd)
-
 				}
 				break runloop
 			case dd := <-view.Signal():
