@@ -2,7 +2,6 @@ package flux
 
 import (
 	"fmt"
-	"log"
 	"sync"
 	"sync/atomic"
 )
@@ -282,7 +281,6 @@ func DistributeSignals(from Reactors, rs ...Reactors) (m Reactors) {
 
 					func(data Signal, ind int, ro Reactors) {
 						GoDefer(fmt.Sprintf("DeliverError::to(%d)", ind), func() {
-							log.Printf("sending error", ind)
 							ro.Send(data)
 						})
 					}(de, n, rsd)
