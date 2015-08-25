@@ -217,6 +217,16 @@ func ChannelReactProcessor(col *ChannelCollector) ReactiveOp {
 	}
 }
 
+//ChannelReactWith wraps the whole data react operation
+func ChannelReactWith(mx Reactors, fx *ChannelCollector) Reactors {
+	return mx.React(ChannelReactProcessor(fx))
+}
+
+//DataReactWith wraps the whole data react operation
+func DataReactWith(mx Reactors, fx SignalMux) Reactors {
+	return mx.React(DataReactProcessor(fx))
+}
+
 //DataReact returns a reactor that only sends it in to its out
 func DataReact(fx SignalMux) Reactors {
 	return Reactive(DataReactProcessor(fx))
