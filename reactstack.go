@@ -11,6 +11,9 @@ type (
 	//Signal denotes a value received by a reactivestack
 	Signal interface{}
 
+	//SignalMux provides a signal function type
+	SignalMux func(d Signal) Signal
+
 	//ReactiveOp defines a reactive function operation
 	ReactiveOp func(ReactorsView)
 
@@ -54,9 +57,9 @@ type (
 	}
 )
 
-// ReactIdentity returns a reactor that only sends it in to its out
-func ReactIdentity() Reactors {
-	return Reactive(func(self ReactorsView) {
+//ReactIdentityProcessor provides the ReactIdentity processing op
+func ReactIdentityProcessor() ReactiveOp {
+	return func(self ReactorsView) {
 		func() {
 		iloop:
 			for {
@@ -73,7 +76,39 @@ func ReactIdentity() Reactors {
 			self.End()
 			self.Destroy()
 		}()
-	})
+	}
+}
+
+// ReactIdentity returns a reactor that only sends it in to its out
+func ReactIdentity() Reactors {
+	return Reactive(ReactIdentityProcessor())
+}
+
+//DataReactProcessor provides the internal processing ops for DataReact
+func DataReactProcessor(fx SignalMux) ReactiveOp {
+	return func(self ReactorsView) {
+		func() {
+		iloop:
+			for {
+				select {
+				case d := <-self.Closed():
+					self.ReplyClose(d)
+					break iloop
+				case err := <-self.Errors():
+					self.ReplyError(err)
+				case data := <-self.Signal():
+					self.Reply(fx(data))
+				}
+			}
+			self.End()
+			self.Destroy()
+		}()
+	}
+}
+
+//DataReact returns a reactor that only sends it in to its out
+func DataReact(fx SignalMux) Reactors {
+	return Reactive(DataReactProcessor(fx))
 }
 
 //Reactive returns a ReactiveStacks,the process is not started immediately if no root exists,to force it,call .ForceRun()
@@ -141,6 +176,8 @@ func (r *ReactiveStack) Errors() <-chan error {
 func (r *ReactiveStack) Signal() <-chan Signal {
 	return r.data
 }
+
+//TODO fix the issues with sending on a closed channel,must find a way of checking channel state before sending. For SendError,SendClose and Send
 
 //SendError returns the in-put pipe
 func (r *ReactiveStack) SendError(d error) {
@@ -386,4 +423,27 @@ func MergeReactors(rs ...Reactors) Reactors {
 	}
 
 	return m
+}
+
+//LiftReactors takes inputs from each and pipes it to the next reactor
+func LiftReactors(rs ...Reactors) (Reactors, error) {
+	if len(rs) < 1 {
+		return nil, fmt.Errorf("EmptyArgs: Total Count %d", len(rs))
+	}
+
+	if len(rs) == 1 {
+		return rs[0], nil
+	}
+
+	msl := rs[0]
+	rs = rs[1:]
+
+	for _, ro := range rs {
+		func(rx Reactors) {
+			msl.Bind(rx)
+			msl = rx
+		}(ro)
+	}
+
+	return msl, nil
 }

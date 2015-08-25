@@ -2,7 +2,6 @@ package flux
 
 import (
 	"errors"
-	"log"
 	"sync"
 	"testing"
 )
@@ -160,7 +159,6 @@ func TestMergers(t *testing.T) {
 			select {
 			case <-v.Errors():
 			case <-v.Closed():
-				log.Println("close merge")
 				// ws.Done()
 				break mop
 			case <-v.Signal():
@@ -176,5 +174,46 @@ func TestMergers(t *testing.T) {
 
 	mo.SendClose("200")
 	mp.SendClose("600")
+
+}
+
+func TestLifters(t *testing.T) {
+	ws := new(sync.WaitGroup)
+
+	ws.Add(2)
+
+	mo := DataReact(func(d Signal) Signal {
+		vk, _ := d.(int)
+		return vk * 100
+	})
+
+	mo.React(DataReactProcessor(func(data Signal) Signal {
+		vk, _ := data.(int)
+		return vk / 4
+	}))
+
+	mp := DataReact(func(d Signal) Signal {
+		vk, _ := d.(int)
+		return vk * 20
+	})
+
+	liftd, err := LiftReactors(mo, mp)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	liftd.React(DataReactProcessor(func(data Signal) Signal {
+		ws.Done()
+		return data
+	}))
+
+	mo.Send(3)
+	mo.Send(40)
+
+	ws.Wait()
+
+	mo.SendClose("200")
+	// mp.SendClose("600")
 
 }
