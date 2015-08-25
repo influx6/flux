@@ -6,7 +6,12 @@ import (
 	"sync/atomic"
 )
 
-//Reactors defines an the idea of continous, reactive change which is a revised implementation of FRP principles with a golang view and approach. Reactors are like a reactive queue where each reactor builds off a previous reactor to allow a simple top-down flow of data. This approach lends itself from very simple streaming operations to complex stream processing systems. Due to the use of unbuffered channels, Reactors require that the next keep the rule of the channel contract .i.e a reactor channel must have someone to collect/listen/retrieve the data within it i.e ensure a continouse operation else close and end the reactor
+/*Reactors defines an the idea of continous, reactive change which is a revised implementation of FRP principles with a golang view and approach. Reactors are like a reactive queue where each reactor builds off a previous reactor to allow a simple top-down flow of data.
+This approach lends itself from very simple streaming operations to complex stream processing systems.
+Due to the use of unbuffered channels, Reactors require that the next keep the rule of the channel contract
+.i.e a reactor channel must have someone to collect/listen/retrieve the data within it and
+ensure a continouse operation else close and end the reactor
+*/
 
 type (
 
