@@ -19,81 +19,78 @@ Due to the use of unbuffered channels, Reactor require that the next keep the ru
 ensure a continouse operation else close and end the reactor
 */
 
-type (
+//Connector defines the core connecting methods used for binding with a Reactor
+type Connector interface {
+	//Bind provides a convenient way of binding 2 reactors
+	Bind(Reactor) error
+	//React generates a reactor based off its caller
+	React(ReactiveOpHandler) Reactor
+}
 
-	//Connector defines the core connecting methods used for binding with a Reactor
-	Connector interface {
-		//Bind provides a convenient way of binding 2 reactors
-		Bind(Reactor) error
-		//React generates a reactor based off its caller
-		React(ReactiveOpHandler) Reactor
-	}
+//Replier defines reply methods to reply to requests
+type Replier interface {
+	//reply functions
+	Reply(v interface{})
+	ReplyClose(v interface{})
+	ReplyError(v error)
+}
 
-	//Replier defines reply methods to reply to requests
-	Replier interface {
-		//reply functions
-		Reply(v interface{})
-		ReplyClose(v interface{})
-		ReplyError(v error)
-	}
+//Sender defines the delivery methods used to deliver data into Reactor process
+type Sender interface {
+	//delivery functions
+	Send(v interface{})
+	SendClose(v interface{})
+	SendError(v error)
+}
 
-	//Sender defines the delivery methods used to deliver data into Reactor process
-	Sender interface {
-		//delivery functions
-		Send(v interface{})
-		SendClose(v interface{})
-		SendError(v error)
-	}
+//SendBinder defines the combination of the Sender and Binding interfaces
+type SendBinder interface {
+	Sender
+	Connector
+}
 
-	//SendBinder defines the combination of the Sender and Binding interfaces
-	SendBinder interface {
-		Sender
-		Connector
-	}
+//Reactor provides an interface definition for the reactor type to allow compatibility by future extenders when composing with other structs.
+type Reactor interface {
+	Connector
+	Sender
+	Replier
 
-	//Reactor provides an interface definition for the reactor type to allow compatibility by future extenders when composing with other structs.
-	Reactor interface {
-		Connector
-		Sender
-		Replier
+	Detach()
 
-		Detach()
+	//bool functions for ensuring reactors state
+	IsHooked() bool
+	HasRoot() bool
 
-		//bool functions for ensuring reactors state
-		IsHooked() bool
-		HasRoot() bool
+	//private functions for swapping in reactors
+	UseNext(Reactor) error
+	UseRoot(Reactor) error
+}
 
-		//private functions for swapping in reactors
-		UseNext(Reactor) error
-		UseRoot(Reactor) error
-	}
+//ReactorsView provides a deeper view in the reactor
+type ReactorsView interface {
+	Reactor
+	End()
+	Closed() <-chan interface{}
+	Signal() <-chan interface{}
+	Errors() <-chan error
+}
 
-	//ReactorsView provides a deeper view in the reactor
-	ReactorsView interface {
-		Reactor
-		End()
-		Closed() <-chan interface{}
-		Signal() <-chan interface{}
-		Errors() <-chan error
-	}
+//SignalMuxHandler provides a signal function type
+type SignalMuxHandler func(d interface{}) interface{}
 
-	//SignalMuxHandler provides a signal function type
-	SignalMuxHandler func(d interface{}) interface{}
+//ReactiveOpHandler defines a reactive function operation
+type ReactiveOpHandler func(ReactorsView)
 
-	//ReactiveOpHandler defines a reactive function operation
-	ReactiveOpHandler func(ReactorsView)
-
-	//ReactiveStack provides a concrete implementation
-	ReactiveStack struct {
-		data, closed      chan interface{}
-		errs              chan error
-		op                ReactiveOpHandler
-		root              Reactor
-		next              Reactor
-		started, finished int64
-		ro, rod           sync.Mutex
-	}
-)
+//ReactiveStack provides a concrete implementation
+type ReactiveStack struct {
+	data, closed      chan interface{}
+	errs              chan error
+	op                ReactiveOpHandler
+	root              Reactor
+	next              Reactor
+	started, finished int64
+	ro, rod           sync.Mutex
+}
 
 //DistributeSignals takes from one signal and sends it to other reactors
 func DistributeSignals(from Reactor, rs ...Sender) (m Reactor) {
@@ -494,14 +491,12 @@ func (r *ReactiveStack) boot() {
 	})
 }
 
-type (
-	//ChannelStream provides a simple struct for exposing outputs from Reactor to outside
-	ChannelStream struct {
-		Close  chan interface{}
-		Data   chan interface{}
-		Errors chan error
-	}
-)
+//ChannelStream provides a simple struct for exposing outputs from Reactor to outside
+type ChannelStream struct {
+	Close  chan interface{}
+	Data   chan interface{}
+	Errors chan error
+}
 
 //NewChannelStream returns a new channel stream instance
 func NewChannelStream() *ChannelStream {
