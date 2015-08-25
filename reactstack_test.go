@@ -2,7 +2,6 @@ package flux
 
 import (
 	"errors"
-	"log"
 	"sync"
 	"testing"
 )
@@ -16,8 +15,6 @@ func TestChannelConnect(t *testing.T) {
 	feed.SendClose(404)
 
 	do := <-stream.Signals()
-
-	log.Printf("do:", do)
 
 	if do != 20 {
 		t.Fatalf("Inccorect value received %d expected %d", do, 20)
