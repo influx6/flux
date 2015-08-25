@@ -6,6 +6,48 @@ import (
 	"testing"
 )
 
+func TestConnect(t *testing.T) {
+
+	ws := new(sync.WaitGroup)
+
+	//ReactIdentity returns reactor that simply pipes what input it gets to its output if it has a connection
+
+	//collect is the root reactor
+	collect := ReactIdentity()
+
+	ws.Add(2)
+
+	mn := Reactive(func(k ReactorsView) {
+		func() {
+			defer k.End()
+		mloop:
+			for {
+				select {
+				case <-k.Errors():
+					ws.Done()
+				case <-k.Closed():
+					break mloop
+				case <-k.Signal():
+					ws.Done()
+				}
+			}
+		}()
+	})
+
+	ok := collect.Bind(mn)
+
+	if !ok {
+		t.Fatal("Unable to create binding")
+	}
+
+	collect.Send(2)
+	collect.SendError(errors.New("sawdust"))
+
+	ws.Wait()
+
+	collect.SendClose("sucker")
+}
+
 // TestBasicReaction provides a test case for a simple two-way reaction i.e receive and react infinitely to data being sent into a pipe until that pipe is closed
 func TestBasicReaction(t *testing.T) {
 

@@ -16,10 +16,12 @@ type (
 
 	//Reactors provides an interface for a stack implementation using channels
 	Reactors interface {
+		Bind(Reactors) bool
 		React(ReactiveOp) Reactors
 		detach()
 		View() ReactorsView
 		IsHooked() bool
+		HasRoot() bool
 		Send(d Signal)
 		SendClose(d Signal)
 		SendError(d error)
@@ -27,6 +29,8 @@ type (
 		ReplyClose(d Signal)
 		ReplyError(d error)
 		Closed() <-chan Signal
+		useNext(Reactors) bool
+		useRoot(Reactors) bool
 	}
 
 	//ReactorsView provides a deeper view in the reactor
@@ -83,6 +87,22 @@ func Reactive(fx ReactiveOp) *ReactiveStack {
 	r.boot()
 
 	return r
+}
+
+func (r *ReactiveStack) useRoot(fx Reactors) bool {
+	if r.root != nil {
+		return false
+	}
+	r.root = fx
+	return true
+}
+
+func (r *ReactiveStack) useNext(fx Reactors) bool {
+	if r.root != nil {
+		return false
+	}
+	r.next = fx
+	return true
 }
 
 func (r *ReactiveStack) detach() {
@@ -212,9 +232,24 @@ func (r *ReactiveStack) View() ReactorsView {
 	return r
 }
 
+// HasRoot returns true/false if its has a chain
+func (r *ReactiveStack) HasRoot() bool {
+	return r.root != nil
+}
+
 // IsHooked returns true/false if its has a chain
 func (r *ReactiveStack) IsHooked() bool {
 	return r.next != nil
+}
+
+//Bind connects a reactor to the next available reactor in the chain that has no binding,you can only bind if the provided reactor has no binding (root) and if the target reactor has no next. A bool value is returned to indicate success or failure
+func (r *ReactiveStack) Bind(fx Reactors) bool {
+	if !r.useNext(fx) {
+		return r.next.Bind(fx)
+	}
+
+	fx.useRoot(r)
+	return true
 }
 
 //React creates a reactivestack from this current one
