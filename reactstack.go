@@ -2,7 +2,6 @@ package flux
 
 import (
 	"fmt"
-	"sync"
 	"sync/atomic"
 )
 
@@ -19,6 +18,7 @@ type (
 		Bind(Reactors) bool
 		React(ReactiveOp) Reactors
 		detach()
+		Destroy()
 		View() ReactorsView
 		IsHooked() bool
 		HasRoot() bool
@@ -49,7 +49,7 @@ type (
 		root              Reactors
 		next              Reactors
 		started, finished int64
-		cleaner           *sync.Once
+		// rw                *sync.RWMutex
 	}
 )
 
@@ -57,7 +57,6 @@ type (
 func ReactIdentity() Reactors {
 	return Reactive(func(self ReactorsView) {
 		func() {
-			defer self.End()
 		iloop:
 			for {
 				select {
@@ -70,6 +69,8 @@ func ReactIdentity() Reactors {
 					self.Reply(data)
 				}
 			}
+			self.End()
+			self.Destroy()
 		}()
 	})
 }
@@ -77,11 +78,10 @@ func ReactIdentity() Reactors {
 //Reactive returns a ReactiveStacks,the process is not started immediately if no root exists,to force it,call .ForceRun()
 func Reactive(fx ReactiveOp) *ReactiveStack {
 	r := &ReactiveStack{
-		data:    make(chan Signal),
-		closed:  make(chan Signal),
-		errs:    make(chan error),
-		op:      fx,
-		cleaner: new(sync.Once),
+		data:   make(chan Signal),
+		closed: make(chan Signal),
+		errs:   make(chan error),
+		op:     fx,
 	}
 
 	r.boot()
@@ -98,9 +98,10 @@ func (r *ReactiveStack) useRoot(fx Reactors) bool {
 }
 
 func (r *ReactiveStack) useNext(fx Reactors) bool {
-	if r.root != nil {
+	if r.next != nil {
 		return false
 	}
+
 	r.next = fx
 	return true
 }
@@ -139,7 +140,8 @@ func (r *ReactiveStack) Signal() <-chan Signal {
 
 //SendError returns the in-put pipe
 func (r *ReactiveStack) SendError(d error) {
-	if r.finished > 0 {
+	state := atomic.LoadInt64(&r.finished)
+	if state > 0 {
 		return
 	}
 
@@ -152,7 +154,8 @@ func (r *ReactiveStack) SendError(d error) {
 
 //Send returns the in-put pipe
 func (r *ReactiveStack) Send(d Signal) {
-	if r.finished > 0 {
+	state := atomic.LoadInt64(&r.finished)
+	if state > 0 {
 		return
 	}
 
@@ -165,11 +168,12 @@ func (r *ReactiveStack) Send(d Signal) {
 
 //SendClose returns the in-put pipe
 func (r *ReactiveStack) SendClose(d Signal) {
-	if r.finished > 0 {
+	state := atomic.LoadInt64(&r.finished)
+	if state > 0 {
 		return
 	}
 
-	if r == nil {
+	if d == nil {
 		return
 	}
 
@@ -178,7 +182,8 @@ func (r *ReactiveStack) SendClose(d Signal) {
 
 //Reply returns the out-put pipe
 func (r *ReactiveStack) Reply(d Signal) {
-	if r.finished > 0 {
+	state := atomic.LoadInt64(&r.finished)
+	if state > 0 {
 		return
 	}
 
@@ -186,7 +191,7 @@ func (r *ReactiveStack) Reply(d Signal) {
 		return
 	}
 
-	if r.next == nil {
+	if !r.IsHooked() {
 		return
 	}
 
@@ -195,7 +200,8 @@ func (r *ReactiveStack) Reply(d Signal) {
 
 //ReplyClose returns the out-put pipe
 func (r *ReactiveStack) ReplyClose(d Signal) {
-	if r.finished > 0 {
+	state := atomic.LoadInt64(&r.finished)
+	if state > 0 {
 		return
 	}
 
@@ -203,7 +209,7 @@ func (r *ReactiveStack) ReplyClose(d Signal) {
 		return
 	}
 
-	if r.next == nil {
+	if !r.IsHooked() {
 		return
 	}
 
@@ -212,7 +218,8 @@ func (r *ReactiveStack) ReplyClose(d Signal) {
 
 //ReplyError returns the out-put pipe
 func (r *ReactiveStack) ReplyError(d error) {
-	if r.finished > 0 {
+	state := atomic.LoadInt64(&r.finished)
+	if state > 0 {
 		return
 	}
 
@@ -220,7 +227,7 @@ func (r *ReactiveStack) ReplyError(d error) {
 		return
 	}
 
-	if r.next == nil {
+	if !r.IsHooked() {
 		return
 	}
 
@@ -269,7 +276,8 @@ func (r *ReactiveStack) React(fx ReactiveOp) Reactors {
 
 //End signals to the next stack its closing
 func (r *ReactiveStack) End() {
-	if r.finished > 0 {
+	state := atomic.LoadInt64(&r.finished)
+	if state > 0 {
 		return
 	}
 
@@ -277,6 +285,14 @@ func (r *ReactiveStack) End() {
 
 	if r.root != nil {
 		r.root.detach()
+	}
+}
+
+//Destroy closes the channels after the call to End()
+func (r *ReactiveStack) Destroy() {
+	state := atomic.LoadInt64(&r.finished)
+	if state <= 0 {
+		return
 	}
 
 	close(r.data)
@@ -329,14 +345,35 @@ func DistributeSignals(from Reactors, rs ...Reactors) (m Reactors) {
 }
 
 //MergeReactors takes input from serveral reactors and turn it into one signal (a []interface{}) signal type
-func MergeReactors(rs ...Reactors) (m Reactors) {
-	m = ReactIdentity()
+func MergeReactors(rs ...Reactors) Reactors {
+	m := ReactIdentity()
+
+	maxcount := len(rs) - 1
 
 	for _, rsm := range rs {
 		func(ro, col Reactors) {
-			ro.Bind(col)
+			ro.React(func(v ReactorsView) {
+			mop:
+				for {
+					select {
+					case err := <-v.Errors():
+						m.SendError(err)
+					case d := <-v.Closed():
+						if maxcount <= 0 {
+							m.SendClose(d)
+							break mop
+						}
+						maxcount--
+					case d := <-v.Signal():
+						m.Send(d)
+					}
+				}
+				v.End()
+				v.Destroy()
+
+			})
 		}(rsm, m)
 	}
 
-	return nil
+	return m
 }

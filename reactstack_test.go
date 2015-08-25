@@ -2,6 +2,7 @@ package flux
 
 import (
 	"errors"
+	"log"
 	"sync"
 	"testing"
 )
@@ -154,17 +155,14 @@ func TestMergers(t *testing.T) {
 
 	merged.React(func(v ReactorsView) {
 		defer v.End()
-		count := 0
 	mop:
 		for {
 			select {
 			case <-v.Errors():
-				//donothing
 			case <-v.Closed():
-				if count >= 2 {
-					break mop
-				}
-				count++
+				log.Println("close merge")
+				// ws.Done()
+				break mop
 			case <-v.Signal():
 				ws.Done()
 			}
@@ -177,6 +175,6 @@ func TestMergers(t *testing.T) {
 	ws.Wait()
 
 	mo.SendClose("200")
-	mp.SendClose("200")
+	mp.SendClose("600")
 
 }
