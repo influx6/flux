@@ -2,6 +2,7 @@ package flux
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 )
 
@@ -49,7 +50,7 @@ type (
 		root              Reactors
 		next              Reactors
 		started, finished int64
-		// rw                *sync.RWMutex
+		ro                *sync.Mutex
 	}
 )
 
@@ -82,6 +83,7 @@ func Reactive(fx ReactiveOp) *ReactiveStack {
 		closed: make(chan Signal),
 		errs:   make(chan error),
 		op:     fx,
+		ro:     new(sync.Mutex),
 	}
 
 	r.boot()
@@ -107,7 +109,9 @@ func (r *ReactiveStack) useNext(fx Reactors) bool {
 }
 
 func (r *ReactiveStack) detach() {
+	r.ro.Lock()
 	r.next = nil
+	r.ro.Unlock()
 }
 
 //ForceRun forces the immediate start of the reactor
@@ -246,7 +250,10 @@ func (r *ReactiveStack) HasRoot() bool {
 
 // IsHooked returns true/false if its has a chain
 func (r *ReactiveStack) IsHooked() bool {
-	return r.next != nil
+	r.ro.Lock()
+	state := (r.next != nil)
+	r.ro.Unlock()
+	return state
 }
 
 //Bind connects a reactor to the next available reactor in the chain that has no binding,you can only bind if the provided reactor has no binding (root) and if the target reactor has no next. A bool value is returned to indicate success or failure
@@ -348,6 +355,7 @@ func DistributeSignals(from Reactors, rs ...Reactors) (m Reactors) {
 func MergeReactors(rs ...Reactors) Reactors {
 	m := ReactIdentity()
 
+	rdo := new(sync.Mutex)
 	maxcount := len(rs) - 1
 
 	for _, rsm := range rs {
@@ -359,11 +367,13 @@ func MergeReactors(rs ...Reactors) Reactors {
 					case err := <-v.Errors():
 						m.SendError(err)
 					case d := <-v.Closed():
+						rdo.Lock()
 						if maxcount <= 0 {
 							m.SendClose(d)
 							break mop
 						}
 						maxcount--
+						rdo.Unlock()
 					case d := <-v.Signal():
 						m.Send(d)
 					}
