@@ -188,8 +188,9 @@ func LiftReactors(rs ...Reactor) (Reactor, error) {
 
 	for _, ro := range rs {
 		func(rx Reactor) {
-			msl.Bind(rx)
-			msl = rx
+			if err := msl.Bind(rx); err == nil {
+				msl = rx
+			}
 		}(ro)
 	}
 
