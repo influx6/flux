@@ -22,19 +22,18 @@ func TestBasicReaction(t *testing.T) {
 	//but are able to get the parent reactor using the .Feed() function and collect the data from its Out() pipe
 	//all reactor provide a .Close() channel that lets you listen in for when to stop operations,this way you get to decide
 	//if you wish to stop the new reactor along
-	mn := collect.React(func(k ReactiveStacks) {
+	mn := collect.React(func(k ReactorsView) {
 		func() {
+			defer k.End()
 		mloop:
 			for {
 				select {
-				case <-k.In():
+				case d := <-k.Signal():
+					log.Printf("collect: %s", d)
 					ws.Done()
-				case <-k.Feed().Out():
-					ws.Done()
+				case err := <-k.Errors():
+					log.Printf("collect-error: %s", err.Error())
 				case <-k.Closed():
-					break mloop
-				case <-k.Feed().Closed():
-					k.End()
 					break mloop
 				}
 			}
@@ -42,66 +41,44 @@ func TestBasicReaction(t *testing.T) {
 	})
 
 	/*we can emit/send data for reaction using the in-channel returned bythe In() function*/
-	collect.In() <- 2 //sends data into the root reactor
-	mn.In() <- 40     //sends data only into the current reactor
+	collect.Send(2) //sends data into the root reactor
+	mn.Send(40)     //sends data only into the current reactor
 
 	ws.Wait()
 
-	mn.End()
+	mn.SendClose("see-ya")
 	//Reactors are closed by calling the .End() function
-	collect.End()
+	collect.SendClose("sucker")
 }
 
-func TestMultiplier(t *testing.T) {
-	ws := new(sync.WaitGroup)
-
-	//collect is the root reactor
-	mul := ReactIdentity()
-
-	ws.Add(4)
-
-	col := mul.React(ReactReceive())
-
-	GoDefer("Receve1", func() {
-	nl:
-		for {
-			select {
-			case data := <-col.Out():
-				log.Println("received1:", data)
-				ws.Done()
-			case <-col.Closed():
-				log.Println("closing 1")
-				break nl
-			}
-		}
-		// ws.Done()
-	})
-
-	col2 := mul.React(ReactReceive())
-
-	GoDefer("Receive2", func() {
-	nl:
-		for {
-			select {
-			case data := <-col2.Out():
-				log.Println("received2:", data)
-				ws.Done()
-			case <-col2.Closed():
-				log.Println("closing 2")
-				break nl
-			}
-		}
-		// ws.Done()
-	})
-
-	mul.In() <- 3
-	mul.In() <- 40
-
-	// col2.End()
-	// col.End()
-
-	// mul.In() <- 50
-
-	ws.Wait()
-	mul.End()
-}
+// func TestMoreReceivers(t *testing.T) {
+// 	ws := new(sync.WaitGroup)
+//
+// 	//collect is the root reactor
+// 	mul := ReactIdentity()
+//
+// 	ws.Add(3)
+//
+// 	mul.React(ReactReceive())
+//
+// 	col2 := mul.React(ReactReceive())
+//
+// 	view := col2.View()
+// 	GoDefer("Receive2", func() {
+// 		for data := range view.Out() {
+// 			log.Println("received2:", data)
+// 			ws.Done()
+// 		}
+// 	})
+//
+// 	mul.Send(3)
+// 	mul.Send(40)
+//
+// 	// col2.End()
+// 	// col.End()
+//
+// 	mul.Send(50)
+//
+// 	ws.Wait()
+// 	mul.End()
+// }
