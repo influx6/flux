@@ -330,5 +330,13 @@ func DistributeSignals(from Reactors, rs ...Reactors) (m Reactors) {
 
 //MergeReactors takes input from serveral reactors and turn it into one signal (a []interface{}) signal type
 func MergeReactors(rs ...Reactors) (m Reactors) {
+	m = ReactIdentity()
+
+	for _, rsm := range rs {
+		func(ro, col Reactors) {
+			ro.Bind(col)
+		}(rsm, m)
+	}
+
 	return nil
 }

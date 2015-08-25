@@ -93,7 +93,7 @@ func TestBasicReaction(t *testing.T) {
 	collect.SendClose("sucker")
 }
 
-func TestMoreReceivers(t *testing.T) {
+func TestDistributor(t *testing.T) {
 	ws := new(sync.WaitGroup)
 
 	//master is the root reactor
@@ -140,4 +140,43 @@ func TestMoreReceivers(t *testing.T) {
 
 	ws.Wait()
 	master.SendClose("200")
+}
+
+func TestMergers(t *testing.T) {
+	ws := new(sync.WaitGroup)
+
+	ws.Add(2)
+
+	mo := ReactIdentity()
+	mp := ReactIdentity()
+
+	merged := MergeReactors(mo, mp)
+
+	merged.React(func(v ReactorsView) {
+		defer v.End()
+		count := 0
+	mop:
+		for {
+			select {
+			case <-v.Errors():
+				//donothing
+			case <-v.Closed():
+				if count >= 2 {
+					break mop
+				}
+				count++
+			case <-v.Signal():
+				ws.Done()
+			}
+		}
+	})
+
+	mo.Send(3)
+	mp.Send(40)
+
+	ws.Wait()
+
+	mo.SendClose("200")
+	mp.SendClose("200")
+
 }
