@@ -7,20 +7,19 @@ import (
 )
 
 func TestChannelConnect(t *testing.T) {
-	stream := SignalCollector()
-	feed := Reactive(ChannelReactProcessor(stream))
+	stream := NewChannelStream()
+	feed := ChannelReact(stream)
 
 	feed.Send(20)
 
 	feed.SendClose(404)
 
-	do := <-stream.Signals()
+	do := <-stream.Data
 
 	if do != 20 {
 		t.Fatalf("Inccorect value received %d expected %d", do, 20)
 	}
 
-	feed.Destroy()
 }
 
 func TestConnect(t *testing.T) {
@@ -199,17 +198,17 @@ func TestLifters(t *testing.T) {
 
 	ws.Add(2)
 
-	mo := DataReact(func(d Signal) Signal {
+	mo := DataReact(func(d interface{}) interface{} {
 		vk, _ := d.(int)
 		return vk * 100
 	})
 
-	mo.React(DataReactProcessor(func(data Signal) Signal {
+	mo.React(DataReactProcessor(func(data interface{}) interface{} {
 		vk, _ := data.(int)
 		return vk / 4
 	}))
 
-	mp := DataReact(func(d Signal) Signal {
+	mp := DataReact(func(d interface{}) interface{} {
 		vk, _ := d.(int)
 		return vk * 20
 	})
@@ -220,7 +219,7 @@ func TestLifters(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	liftd.React(DataReactProcessor(func(data Signal) Signal {
+	liftd.React(DataReactProcessor(func(data interface{}) interface{} {
 		ws.Done()
 		return data
 	}))
