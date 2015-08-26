@@ -25,7 +25,7 @@ var ErrReactorClosed = errors.New("Reactor is Closed")
   It takes three arguments:
 		- reactor:(Reactor) the reactor itself for reply processing
 		- failure:(error) the current error being returned when a data is nil
-		- data:(interface{}) the current data being returned
+		- data:(interface{}) the current data being returned,nil when theres an error
 */
 type SignalMuxHandler func(reactor Reactor, failure error, signal interface{})
 
@@ -68,7 +68,7 @@ func ReactIdentity() Reactor {
 	return Reactive(ReactIdentityProcessor())
 }
 
-// Reactive returns a ReactiveStacks,the process is not started immediately if no root exists,to force it,call .ForceRun()
+// Reactive returns a ReactiveStacks
 func Reactive(fx SignalMuxHandler) *ReactiveStack {
 	r := BuildReactive(fx)
 	go r.Manage()
@@ -212,7 +212,7 @@ type Connector interface {
 	BindControl(r Reactor, fx func())
 }
 
-// Bind connects a reactor to the next available reactor in the chain that has no binding,you can only bind if the provided reactor has no binding (root) and if the target reactor has no next. A bool value is returned to indicate success or failure
+// Bind connects a reactor to this reactor as an alternative to a connection by the React() approach
 func (r *ReactiveStack) Bind(rx Reactor, closeAlong bool) {
 
 	r.branch.Add(rx)
@@ -223,7 +223,7 @@ func (r *ReactiveStack) Bind(rx Reactor, closeAlong bool) {
 	}
 }
 
-// BindControl provides a means of adding an extra control layer for binding,it runs a go-routine that waits till the root is closed
+// BindControl provides a means of adding an extra control layer for binding,it runs a go-routine that waits till the root is closed to run the supplied function
 func (r *ReactiveStack) BindControl(rx Reactor, fx func()) {
 	r.branch.Add(rx)
 	// r.enders.Add(rx)
