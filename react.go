@@ -105,8 +105,8 @@ func (r *ReactiveStack) Close() error {
 	atomic.StoreInt64(&r.bit, 1)
 
 	r.ps.Close()
-	r.roots.Clean()
-	r.branch.Clean()
+	// r.roots.Clean()
+	// r.branch.Clean()
 	return nil
 }
 
