@@ -75,3 +75,29 @@ func TestPartyOf2(t *testing.T) {
 
 	dude.Close()
 }
+
+func TestMerge(t *testing.T) {
+	var ws sync.WaitGroup
+	ws.Add(2)
+
+	mo := ReactIdentity()
+	mp := ReactIdentity()
+
+	me := MergeReactors(mo, mp)
+
+	me.React(func(v Reactor, err error, data interface{}) {
+		ws.Done()
+	}, true)
+
+	mo.Send(1)
+	mp.Send(2)
+
+	me.Close()
+
+	mp.Send(4)
+
+	ws.Wait()
+
+	mo.Close()
+	mp.Close()
+}

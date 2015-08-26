@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"sync/atomic"
 )
 
 /* Reactors define an the idea of continous, reactive change which is a revised implementation of FRP principles with a golang view and approach. Reactor are like a reactive queue where each reactor builds off a previous reactor to allow a simple top-down flow of data.
@@ -15,6 +16,9 @@ ensure a continouse operation else close and end the reactor
 
 // ErrFailedBind represent a failure in binding two Reactors
 var ErrFailedBind = errors.New("Failed to Bind Reactors")
+
+// ErrReactorClosed returned when reactor is closed
+var ErrReactorClosed = errors.New("Reactor is Closed")
 
 // SignalMuxHandler provides a signal function type:
 /*
@@ -45,7 +49,7 @@ type ReactiveStack struct {
 	branch, enders, roots *mapReact
 	wg                    sync.WaitGroup
 	ro                    sync.Mutex
-	end                   bool
+	bit                   int64
 }
 
 //ReactIdentityProcessor provides the processor for a ReactIdentity
@@ -89,12 +93,20 @@ func BuildReactive(fx SignalMuxHandler) *ReactiveStack {
 
 // Close ends signaling operation to the next stack its closing
 func (r *ReactiveStack) Close() error {
+	if atomic.LoadInt64(&r.bit) > 0 {
+		return ErrReactorClosed
+	}
+
 	r.roots.Do(func(rm SenderDetachCloser) {
 		rm.Detach(r)
 	})
 
 	r.wg.Wait()
+	atomic.StoreInt64(&r.bit, 1)
+
 	r.ps.Close()
+	r.roots.Clean()
+	r.branch.Clean()
 	return nil
 }
 
@@ -107,6 +119,8 @@ func (r *ReactiveStack) UseRoot(rx Reactor) {
 func (r *ReactiveStack) Manage() {
 	defer func() {
 		r.enders.Close()
+		r.roots.Clean()
+		r.branch.Clean()
 	}()
 
 	for {
@@ -195,6 +209,7 @@ type Connector interface {
 	Bind(r Reactor, closeAlong bool)
 	//React generates a reactor based off its caller
 	React(s SignalMuxHandler, closeAlong bool) Reactor
+	BindControl(r Reactor, fx func())
 }
 
 // Bind connects a reactor to the next available reactor in the chain that has no binding,you can only bind if the provided reactor has no binding (root) and if the target reactor has no next. A bool value is returned to indicate success or failure
@@ -206,7 +221,18 @@ func (r *ReactiveStack) Bind(rx Reactor, closeAlong bool) {
 	if closeAlong {
 		r.enders.Add(rx)
 	}
+}
 
+// BindControl provides a means of adding an extra control layer for binding,it runs a go-routine that waits till the root is closed
+func (r *ReactiveStack) BindControl(rx Reactor, fx func()) {
+	r.branch.Add(rx)
+	// r.enders.Add(rx)
+	rx.UseRoot(r)
+
+	go func(ro sync.WaitGroup) {
+		ro.Wait()
+		fx()
+	}(r.wg)
 }
 
 // React creates a reactivestack from this current one with a boolean value
@@ -230,8 +256,19 @@ type SendBinder interface {
 // MergeReactors merges data from a set of Senders into a new reactor stream
 func MergeReactors(rs ...SendBinder) Reactor {
 	ms := ReactIdentity()
-	// for _, si := range rs {
-	// }
+	for _, si := range rs {
+		func(so SendBinder) {
+			var cu int
+			size := len(rs)
+			so.BindControl(ms, func() {
+				if cu == size {
+					ms.Close()
+					return
+				}
+				cu++
+			})
+		}(si)
+	}
 	return ms
 }
 
@@ -274,33 +311,39 @@ func (m *mapReact) Clean() {
 
 func (m *mapReact) Deliver(err error, data interface{}) {
 	m.ro.RLock()
-	for ms, ok := range m.ma {
-		if !ok {
-			continue
-		}
+	if m.ma != nil {
+		for ms, ok := range m.ma {
+			if !ok {
+				continue
+			}
 
-		if err != nil {
-			ms.SendError(err)
-			continue
-		}
+			if err != nil {
+				ms.SendError(err)
+				continue
+			}
 
-		ms.Send(data)
+			ms.Send(data)
+		}
 	}
 	m.ro.RUnlock()
 }
 
 func (m *mapReact) Add(r SenderDetachCloser) {
 	m.ro.Lock()
-	if !m.ma[r] {
-		m.ma[r] = true
+	if m.ma != nil {
+		if !m.ma[r] {
+			m.ma[r] = true
+		}
 	}
 	m.ro.Unlock()
 }
 
 func (m *mapReact) Disable(r SenderDetachCloser) {
 	m.ro.Lock()
-	if _, ok := m.ma[r]; ok {
-		m.ma[r] = false
+	if m.ma != nil {
+		if _, ok := m.ma[r]; ok {
+			m.ma[r] = false
+		}
 	}
 	m.ro.Unlock()
 }
@@ -308,34 +351,42 @@ func (m *mapReact) Disable(r SenderDetachCloser) {
 func (m *mapReact) Length() int {
 	var l int
 	m.ro.RLock()
-	l = len(m.ma)
+	if m.ma != nil {
+		l = len(m.ma)
+	}
 	m.ro.RUnlock()
 	return l
 }
 
 func (m *mapReact) Do(fx func(SenderDetachCloser)) {
 	m.ro.RLock()
-	for ms := range m.ma {
-		fx(ms)
+	if m.ma != nil {
+		for ms := range m.ma {
+			fx(ms)
+		}
 	}
 	m.ro.RUnlock()
 }
 
 func (m *mapReact) DisableAll() {
 	m.ro.Lock()
-	for ms := range m.ma {
-		m.ma[ms] = false
+	if m.ma != nil {
+		for ms := range m.ma {
+			m.ma[ms] = false
+		}
 	}
 	m.ro.Unlock()
 }
 
 func (m *mapReact) Close() {
 	m.ro.RLock()
-	for ms, ok := range m.ma {
-		if !ok {
-			continue
+	if m.ma != nil {
+		for ms, ok := range m.ma {
+			if !ok {
+				continue
+			}
+			ms.Close()
 		}
-		ms.Close()
 	}
 	m.ro.RUnlock()
 }
