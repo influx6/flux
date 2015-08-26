@@ -52,7 +52,7 @@ type ReactiveStack struct {
 	bit                   int64
 }
 
-//ReactIdentityProcessor provides the processor for a ReactIdentity
+// ReactIdentityProcessor provides the processor for a ReactIdentity
 func ReactIdentityProcessor() SignalMuxHandler {
 	return func(r Reactor, err error, data interface{}) {
 		if err != nil {
@@ -63,7 +63,7 @@ func ReactIdentityProcessor() SignalMuxHandler {
 	}
 }
 
-//ReactIdentity returns a reactor that passes on its request to its listeners if any without modification
+// ReactIdentity returns a reactor that passes on its request to its listeners if any without modification
 func ReactIdentity() Reactor {
 	return Reactive(ReactIdentityProcessor())
 }
@@ -110,7 +110,7 @@ func (r *ReactiveStack) Close() error {
 	return nil
 }
 
-//UseRoot adds a new root as part of the reactor roots
+// UseRoot adds a new root as part of the reactor roots
 func (r *ReactiveStack) UseRoot(rx Reactor) {
 	r.roots.Add(rx)
 }
@@ -143,7 +143,7 @@ func (r *ReactiveStack) Manage() {
 	}
 }
 
-//Detacher details the detach interface used by the Reactor
+// Detacher details the detach interface used by the Reactor
 type Detacher interface {
 	Detach(Reactor)
 }
@@ -172,7 +172,7 @@ func (r *ReactiveStack) Send(d interface{}) {
 	r.ps.SendSignal(d)
 }
 
-//DistributeSignals provide a function that takes a React and other multiple Reactor and distribute the data from the first reactor to others
+// DistributeSignals provide a function that takes a React and other multiple Reactor and distribute the data from the first reactor to others
 func DistributeSignals(rs Reactor, ms ...Sender) Reactor {
 	return rs.React(func(r Reactor, err error, data interface{}) {
 		for _, mi := range ms {
@@ -205,9 +205,9 @@ func (r *ReactiveStack) ReplyError(err error) {
 
 // Connector defines the core connecting methods used for binding with a Reactor
 type Connector interface {
-	//Bind provides a convenient way of binding 2 reactors
+	// Bind provides a convenient way of binding 2 reactors
 	Bind(r Reactor, closeAlong bool)
-	//React generates a reactor based off its caller
+	// React generates a reactor based off its caller
 	React(s SignalMuxHandler, closeAlong bool) Reactor
 	BindControl(r Reactor, fx func())
 }
@@ -272,19 +272,19 @@ func MergeReactors(rs ...SendBinder) Reactor {
 	return ms
 }
 
-//ReplierCloser provides an interface that combines Replier and Closer interfaces
+// ReplierCloser provides an interface that combines Replier and Closer interfaces
 type ReplierCloser interface {
 	Replier
 	io.Closer
 }
 
-//SenderCloser provides an interface that combines Sender and Closer interfaces
+// SenderCloser provides an interface that combines Sender and Closer interfaces
 type SenderCloser interface {
 	Sender
 	io.Closer
 }
 
-//SenderDetachCloser provides an interface that combines Sender and Closer interfaces
+// SenderDetachCloser provides an interface that combines Sender and Closer interfaces
 type SenderDetachCloser interface {
 	Sender
 	Detacher
@@ -303,12 +303,14 @@ func NewMapReact() *mapReact {
 	return &ma
 }
 
+// Clean resets the map
 func (m *mapReact) Clean() {
 	m.ro.Lock()
 	m.ma = make(map[SenderDetachCloser]bool)
 	m.ro.Unlock()
 }
 
+// Deliver either a data or error to the Sender
 func (m *mapReact) Deliver(err error, data interface{}) {
 	m.ro.RLock()
 	for ms, ok := range m.ma {
@@ -326,6 +328,7 @@ func (m *mapReact) Deliver(err error, data interface{}) {
 	m.ro.RUnlock()
 }
 
+// Add a sender into the map as available
 func (m *mapReact) Add(r SenderDetachCloser) {
 	m.ro.Lock()
 	if !m.ma[r] {
@@ -334,6 +337,7 @@ func (m *mapReact) Add(r SenderDetachCloser) {
 	m.ro.Unlock()
 }
 
+// Disable a particular sender
 func (m *mapReact) Disable(r SenderDetachCloser) {
 	m.ro.Lock()
 	if _, ok := m.ma[r]; ok {
@@ -342,6 +346,7 @@ func (m *mapReact) Disable(r SenderDetachCloser) {
 	m.ro.Unlock()
 }
 
+// Length returns the length of the map
 func (m *mapReact) Length() int {
 	var l int
 	m.ro.RLock()
@@ -350,6 +355,7 @@ func (m *mapReact) Length() int {
 	return l
 }
 
+// Do performs the function on every item
 func (m *mapReact) Do(fx func(SenderDetachCloser)) {
 	m.ro.RLock()
 	for ms := range m.ma {
@@ -358,6 +364,7 @@ func (m *mapReact) Do(fx func(SenderDetachCloser)) {
 	m.ro.RUnlock()
 }
 
+// DisableAll disables the items in the map
 func (m *mapReact) DisableAll() {
 	m.ro.Lock()
 	for ms := range m.ma {
@@ -366,6 +373,7 @@ func (m *mapReact) DisableAll() {
 	m.ro.Unlock()
 }
 
+// Close closes all the SenderDetachClosers
 func (m *mapReact) Close() {
 	m.ro.RLock()
 	for ms, ok := range m.ma {
