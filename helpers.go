@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"time"
 )
@@ -201,22 +200,32 @@ func Report(e error, msg string) {
 	}
 }
 
+//RecoveryHandler provides a recovery handler functions for use to automate the recovery processes
+func RecoveryHandler(tag string, opFunc func() error) error {
+	defer func() {
+		if err := recover(); err != nil {
+			trace := make([]byte, 1024)
+			count := runtime.Stack(trace, true)
+			log.Printf("---------%s-Panic----------------:", strings.ToUpper(tag))
+			log.Printf("Error: %+s", err)
+			log.Printf("Stack of %d bytes: %+s\n", count, trace)
+			log.Printf("---------%s--END-----------------:", strings.ToUpper(tag))
+		}
+	}()
+
+	if err := opFunc(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 //GoDefer letsw you run a function inside a goroutine that gets a defer recovery
 func GoDefer(title string, fx func()) {
-	go func() {
-		defer func() {
-			if err := recover(); err != nil {
-				var stacks []byte
-				runtime.Stack(stacks, true)
-				log.Printf("---------%s-Panic----------------:", strings.ToUpper(title))
-				log.Printf("Stack Error: %+s", err)
-				log.Printf("Debug Stack: %+s", debug.Stack())
-				log.Printf("Stack List: %+s", stacks)
-				log.Printf("---------%s--END-----------------:", strings.ToUpper(title))
-			}
-		}()
+	go RecoveryHandler(title, func() error {
 		fx()
-	}()
+		return nil
+	})
 }
 
 //Close provides a basic io.WriteCloser write method

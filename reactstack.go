@@ -7,10 +7,8 @@ import (
 	"sync/atomic"
 )
 
-var (
-	// ErrFailedBind represent a failure in binding two Reactors
-	ErrFailedBind = errors.New("Failed to Bind Reactors")
-)
+// ErrFailedBind represent a failure in binding two Reactors
+var ErrFailedBind = errors.New("Failed to Bind Reactors")
 
 /* Reactor defines an the idea of continous, reactive change which is a revised implementation of FRP principles with a golang view and approach. Reactor are like a reactive queue where each reactor builds off a previous reactor to allow a simple top-down flow of data.
 This approach lends itself from very simple streaming operations to complex stream processing systems.
@@ -211,42 +209,42 @@ func ReactIdentity() Reactor {
 
 // ReactIdentityProcessor provides the ReactIdentity processing op
 func ReactIdentityProcessor() ReactiveOpHandler {
-	return func(self ReactorsView) {
+	return func(v ReactorsView) {
 		func() {
 		iloop:
 			for {
 				select {
-				case d := <-self.Closed():
-					self.ReplyClose(d)
+				case d := <-v.Closed():
+					v.ReplyClose(d)
 					break iloop
-				case err := <-self.Errors():
-					self.ReplyError(err)
-				case data := <-self.Signal():
-					self.Reply(data)
+				case err := <-v.Errors():
+					v.ReplyError(err)
+				case data := <-v.Signal():
+					v.Reply(data)
 				}
 			}
-			self.End()
+			v.End()
 		}()
 	}
 }
 
 // DataReactProcessor provides the internal processing ops for DataReact
 func DataReactProcessor(fx SignalMuxHandler) ReactiveOpHandler {
-	return func(self ReactorsView) {
+	return func(v ReactorsView) {
 		func() {
 		iloop:
 			for {
 				select {
-				case d := <-self.Closed():
-					self.ReplyClose(d)
+				case d := <-v.Closed():
+					v.ReplyClose(d)
 					break iloop
-				case err := <-self.Errors():
-					self.ReplyError(err)
-				case data := <-self.Signal():
-					self.Reply(fx(data))
+				case err := <-v.Errors():
+					v.ReplyError(err)
+				case data := <-v.Signal():
+					v.Reply(fx(data))
 				}
 			}
-			self.End()
+			v.End()
 		}()
 	}
 }
@@ -519,30 +517,30 @@ func ChannelReactWith(mx Connector, c *ChannelStream) Reactor {
 
 // ChannelProcessor provides the ReactIdentity processing op
 func ChannelProcessor(c *ChannelStream) ReactiveOpHandler {
-	return func(self ReactorsView) {
+	return func(v ReactorsView) {
 		func() {
 		iloop:
 			for {
 				select {
-				case d := <-self.Closed():
+				case d := <-v.Closed():
 					GoDefer("ChannelClose", func() {
 						c.Close <- d
 					})
-					self.ReplyClose(d)
+					v.ReplyClose(d)
 					break iloop
-				case err := <-self.Errors():
+				case err := <-v.Errors():
 					GoDefer("ChannelError", func() {
 						c.Errors <- err
 					})
-					self.ReplyError(err)
-				case data := <-self.Signal():
+					v.ReplyError(err)
+				case data := <-v.Signal():
 					GoDefer("ChannelData", func() {
 						c.Data <- data
 					})
-					self.Reply(data)
+					v.Reply(data)
 				}
 			}
-			self.End()
+			v.End()
 		}()
 	}
 }
