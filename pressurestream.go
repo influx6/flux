@@ -10,8 +10,6 @@ import (
 // PressureStream provides a higher api for handling pressure requests of two levels (data and errors),there by providing a simple but strong foundation for higher level constructs
 type PressureStream struct {
 	Signals, Errors chan interface{}
-	// a channel used to signal a closed operation
-	Closed chan bool
 
 	// internal queue system for back-pressuing and delivery guarantee
 	signalQueue *Queue
@@ -30,7 +28,6 @@ func BuildPressureStream(dataSignals, errorSignals chan interface{}) *PressureSt
 	ps := PressureStream{
 		Signals: dataSignals,
 		Errors:  errorSignals,
-		Closed:  make(chan bool),
 
 		signalQueue: NewQueue(dataSignals),
 		errorQueue:  NewQueue(errorSignals),
@@ -63,7 +60,6 @@ func (ps *PressureStream) SendError(d error) {
 func (ps *PressureStream) Close() {
 	ps.signalQueue.Close()
 	ps.errorQueue.Close()
-	ps.Closed <- true
 }
 
 // ErrQueueEmpty is returned when the queue has no more elements
@@ -111,8 +107,8 @@ func (q *Queue) Length() int {
 // Close sets the internal operations channels to a close state and waits till the buffer operations are complete to return, hence ensuring the last items where delivered
 func (q *Queue) Close() {
 	close(q.enq)
-	close(q.Deq)
 	q.wg.Wait()
+	close(q.Deq)
 }
 
 // Enqueue adds a new item into the queue's buffer with a guarantee that it was received before returned and manages concurrency by locking the function until the data as being received

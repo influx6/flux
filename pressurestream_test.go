@@ -1,7 +1,9 @@
 package flux
 
 import (
+	"fmt"
 	"runtime"
+	"strconv"
 	"testing"
 )
 
@@ -114,64 +116,6 @@ func TestQueue(t *testing.T) {
 	LogPassed(t, "Queue is empty and channel is closed")
 }
 
-func BenchmarkQueue(t *testing.B) {
-	for i := 0; i < t.N; i++ {
-		dqo := make(chan interface{})
-		digits := NewQueue(dqo)
-
-		//add absurd amount of digits (3000) into the buffer
-		for i := 0; i <= 10000; i++ {
-			digits.Enqueue(i)
-		}
-
-		//remove 1000 total digits from buffer
-		for i := 0; i <= 10000; i++ {
-			<-dqo
-		}
-
-		//clear out buffer and ensure its empty
-		digits.Close()
-	}
-}
-
-func TestPressureStream(t *testing.T) {
-	// ps := NewPressureStream()
-	//
-	// //add absurd amount of digits (3000) into the buffer
-	// for i := 0; i < 10000; i++ {
-	// 	ps.SendSignal(i)
-	// }
-	//
-	// //add absurd amount of digits (3000) into the buffer
-	// for i := 0; i < 10000; i++ {
-	// 	ps.SendError(errors.New(fmt.Sprintf("%d",i)))
-	// }
-	//
-	// //removall the data
-	// for i := 0; i < 10000; i++{
-	//   if signal := <-ps.Signals; signal != i {
-	//     FatalFailed(t, "Received in inaccurate signal, expected %d got %d", i,signal)
-	//   }
-	// }
-	//
-	// LogPassed(t, "All signals were removed")
-	//
-	// //removall the data
-	// for i := 0; i < 10000; i++{
-	//   if signal := <-ps.Errors; signal != i {
-	//     FatalFailed(t, "Received in inaccurate error, expected %d got %d", i,signal)
-	//   }
-	// }
-	//
-	// LogPassed(t, "All signals were removed")
-	//
-}
-
-func BenchmarkPressureStream(t *testing.B) {
-	// for i := 0; i < t.N; i++ {
-	// }
-}
-
 func TestUnfinishedQueue(t *testing.T) {
 	dq := make(chan interface{})
 	qo := NewQueue(dq)
@@ -215,4 +159,108 @@ func TestUnfinishedQueue(t *testing.T) {
 	}
 
 	LogPassed(t, "Queue is empty and channel is closed")
+}
+func BenchmarkQueue(t *testing.B) {
+	for i := 0; i < t.N; i++ {
+		dqo := make(chan interface{})
+		digits := NewQueue(dqo)
+
+		//add absurd amount of digits (3000) into the buffer
+		for i := 0; i <= 10000; i++ {
+			digits.Enqueue(i)
+		}
+
+		//remove 1000 total digits from buffer
+		for i := 0; i <= 10000; i++ {
+			<-dqo
+		}
+
+		//clear out buffer and ensure its empty
+		digits.Close()
+	}
+}
+
+func TestPressureStream(t *testing.T) {
+	ps := NewPressureStream()
+
+	//add absurd amount of digits (3000) into the buffer
+	for i := 0; i < 10000; i++ {
+		ps.SendSignal(i)
+	}
+
+	//add absurd amount of digits (3000) into the buffer
+	for i := 0; i < 10000; i++ {
+		ps.SendError(fmt.Errorf("%d", i))
+	}
+
+	//removall the data
+	for i := 0; i < 10000; i++ {
+		if signal := <-ps.Signals; signal != i {
+			FatalFailed(t, "Received in inaccurate signal, expected %d got %d", i, signal)
+		}
+	}
+
+	LogPassed(t, "All signals were removed")
+
+	//removall the data
+	for i := 0; i < 10000; i++ {
+		signal, ok := (<-ps.Errors).(error)
+		if !ok {
+			FatalFailed(t, "Signal type is incorrect expected error %+s", signal)
+		}
+
+		ind, err := strconv.Atoi(signal.Error())
+
+		if err != nil {
+			FatalFailed(t, "Error value not a stringified number %+s", signal.Error())
+		}
+
+		if ind != i {
+			FatalFailed(t, "Received in inaccurate error, expected %d got %d", i, ind)
+		}
+	}
+
+	LogPassed(t, "All signals were removed")
+
+	//close and ensure we are closed
+	ps.Close()
+
+	_, ok := <-ps.Signals
+
+	if ok {
+		FatalFailed(t, "Signal channel is not closed")
+	}
+
+	_, ok = <-ps.Errors
+
+	if ok {
+		FatalFailed(t, "Signal channel is not closed")
+	}
+
+}
+
+func BenchmarkPressureStream(t *testing.B) {
+	for i := 0; i < t.N; i++ {
+		ps := NewPressureStream()
+
+		//add absurd amount of digits (3000) into the buffer
+		for i := 0; i < 10000; i++ {
+			ps.SendSignal(i)
+		}
+
+		//add absurd amount of digits (3000) into the buffer
+		for i := 0; i < 10000; i++ {
+			ps.SendError(fmt.Errorf("%d", i))
+		}
+
+		for i := 0; i < 10000; i++ {
+			<-ps.Signals
+		}
+
+		for i := 0; i < 10000; i++ {
+			<-ps.Errors
+		}
+
+		ps.Close()
+	}
 }
