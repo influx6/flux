@@ -311,39 +311,33 @@ func (m *mapReact) Clean() {
 
 func (m *mapReact) Deliver(err error, data interface{}) {
 	m.ro.RLock()
-	if m.ma != nil {
-		for ms, ok := range m.ma {
-			if !ok {
-				continue
-			}
-
-			if err != nil {
-				ms.SendError(err)
-				continue
-			}
-
-			ms.Send(data)
+	for ms, ok := range m.ma {
+		if !ok {
+			continue
 		}
+
+		if err != nil {
+			ms.SendError(err)
+			continue
+		}
+
+		ms.Send(data)
 	}
 	m.ro.RUnlock()
 }
 
 func (m *mapReact) Add(r SenderDetachCloser) {
 	m.ro.Lock()
-	if m.ma != nil {
-		if !m.ma[r] {
-			m.ma[r] = true
-		}
+	if !m.ma[r] {
+		m.ma[r] = true
 	}
 	m.ro.Unlock()
 }
 
 func (m *mapReact) Disable(r SenderDetachCloser) {
 	m.ro.Lock()
-	if m.ma != nil {
-		if _, ok := m.ma[r]; ok {
-			m.ma[r] = false
-		}
+	if _, ok := m.ma[r]; ok {
+		m.ma[r] = false
 	}
 	m.ro.Unlock()
 }
@@ -351,42 +345,34 @@ func (m *mapReact) Disable(r SenderDetachCloser) {
 func (m *mapReact) Length() int {
 	var l int
 	m.ro.RLock()
-	if m.ma != nil {
-		l = len(m.ma)
-	}
+	l = len(m.ma)
 	m.ro.RUnlock()
 	return l
 }
 
 func (m *mapReact) Do(fx func(SenderDetachCloser)) {
 	m.ro.RLock()
-	if m.ma != nil {
-		for ms := range m.ma {
-			fx(ms)
-		}
+	for ms := range m.ma {
+		fx(ms)
 	}
 	m.ro.RUnlock()
 }
 
 func (m *mapReact) DisableAll() {
 	m.ro.Lock()
-	if m.ma != nil {
-		for ms := range m.ma {
-			m.ma[ms] = false
-		}
+	for ms := range m.ma {
+		m.ma[ms] = false
 	}
 	m.ro.Unlock()
 }
 
 func (m *mapReact) Close() {
 	m.ro.RLock()
-	if m.ma != nil {
-		for ms, ok := range m.ma {
-			if !ok {
-				continue
-			}
-			ms.Close()
+	for ms, ok := range m.ma {
+		if !ok {
+			continue
 		}
+		ms.Close()
 	}
 	m.ro.RUnlock()
 }
