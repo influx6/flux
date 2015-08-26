@@ -115,7 +115,7 @@ func (r *ReactiveStack) UseRoot(rx Reactor) {
 	r.roots.Add(rx)
 }
 
-// Manage forces the immediate start of the reactor
+// Manage manages the operations of reactor
 func (r *ReactiveStack) Manage() {
 	defer func() {
 		r.enders.Close()
@@ -305,7 +305,7 @@ func NewMapReact() *mapReact {
 
 func (m *mapReact) Clean() {
 	m.ro.Lock()
-	m.ma = nil
+	m.ma = make(map[SenderDetachCloser]bool)
 	m.ro.Unlock()
 }
 
