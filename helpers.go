@@ -200,6 +200,21 @@ func Report(e error, msg string) {
 	}
 }
 
+// SilentRecoveryHandler provides a recovery handler functions for use to automate the recovery processes
+func SilentRecoveryHandler(tag string, opFunc func() error) error {
+	defer func() {
+		if err := recover(); err != nil {
+			return
+		}
+	}()
+
+	if err := opFunc(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 //RecoveryHandler provides a recovery handler functions for use to automate the recovery processes
 func RecoveryHandler(tag string, opFunc func() error) error {
 	defer func() {
@@ -223,6 +238,14 @@ func RecoveryHandler(tag string, opFunc func() error) error {
 //GoDefer letsw you run a function inside a goroutine that gets a defer recovery
 func GoDefer(title string, fx func()) {
 	go RecoveryHandler(title, func() error {
+		fx()
+		return nil
+	})
+}
+
+//GoSilent letsw you run a function inside a goroutine that gets a defer recovery
+func GoSilent(title string, fx func()) {
+	go SilentRecoveryHandler(title, func() error {
 		fx()
 		return nil
 	})

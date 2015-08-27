@@ -150,11 +150,10 @@ func MergeReactors(rs ...Reactor) Reactor {
 		}(si)
 	}
 
-	oldend := endwrap
-	endwrap = func() {
+	GoSilent("MergeClose", func() {
 		defer ms.Close()
-		oldend()
-	}
+		endwrap()
+	})
 
 	return ms
 }
@@ -173,8 +172,6 @@ func (r *ReactiveStack) Close() error {
 	atomic.StoreInt64(&r.bit, 1)
 
 	r.ps.Close()
-	// r.roots.Clean()
-	// r.branch.Clean()
 	close(r.csignal)
 	return nil
 }
@@ -542,14 +539,18 @@ func (m *mapReact) DisableAll() {
 
 // Close closes all the SenderDetachClosers
 func (m *mapReact) Close() {
-	m.ro.RLock()
-	for ms, ok := range m.ma {
-		if !ok {
-			continue
+	//TODO find a fix for the rare PK that happens when this clashes with Reactor.Manage()
+	SilentRecoveryHandler("mapreact-close", func() error {
+		m.ro.RLock()
+		for ms, ok := range m.ma {
+			if !ok {
+				continue
+			}
+			ms.Close()
 		}
-		ms.Close()
-	}
-	m.ro.RUnlock()
+		m.ro.RUnlock()
+		return nil
+	})
 }
 
 // ChannelStream provides a simple struct for exposing outputs from Reactor to outside
