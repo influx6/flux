@@ -6,6 +6,73 @@ import (
 	"testing"
 )
 
+// TestStackers tests the strict stacking structure for reactor as an alternative to its more library branch structure,basically it enforces a stacking down the tree,as far as their is a tail Reactor,all binding will be done with that
+func TestStackers(t *testing.T) {
+	var ws sync.WaitGroup
+	ws.Add(3)
+
+	mo := ReactStack(ReactIdentity())
+
+	mo.React(func(r Reactor, err error, data interface{}) {
+		if 2 != data {
+			FatalFailed(t, "Data is inacurrate expected %d but got %d", 2, data)
+		}
+
+		LogPassed(t, "Data is corrected expected %d and got %d", 2, data)
+
+		r.Reply(data.(int) * 40)
+		ws.Done()
+	}, true)
+
+	if lo := mo.Length(); lo == 0 {
+		FatalFailed(t, "Length is inacurrate expected 1 but got %d", lo)
+	}
+
+	mo.React(func(r Reactor, err error, data interface{}) {
+		if 80 != data {
+			FatalFailed(t, "Data is inacurrate expected %d but got %d", 80, data)
+		}
+
+		LogPassed(t, "Data is corrected expected %d and got %d", 80, data)
+
+		r.Reply(data.(int) * 200)
+		ws.Done()
+	}, true)
+
+	if lo := mo.Length(); lo < 2 {
+		FatalFailed(t, "Length is inacurrate expected 2 but got %d", lo)
+	}
+
+	mi := mo.React(func(r Reactor, err error, data interface{}) {
+		if 16000 != data {
+			FatalFailed(t, "Data is inacurrate expected %d but got %d", 16000, data)
+		}
+
+		LogPassed(t, "Data is corrected expected %d and got %d", 16000, data)
+		ws.Done()
+	}, true)
+
+	if lo := mo.Length(); lo < 3 {
+		FatalFailed(t, "Length is inacurrate expected 3 but got %d", lo)
+	}
+
+	LogPassed(t, "Successfully stacked 3 Reactor. Length: %d", mo.Length())
+
+	lmi, _ := mo.Last()
+
+	if mi != lmi {
+		FatalFailed(t, "Last Reactor is incorrect")
+	}
+
+	LogPassed(t, "Last Reactor matches the reference Reactor.")
+
+	mo.Send(2)
+
+	ws.Wait()
+
+	mo.Close()
+}
+
 // TestMousePosition provides a example test of a reactor that process mouse position (a slice of two values)
 func TestMousePosition(t *testing.T) {
 	var count int64
@@ -93,7 +160,6 @@ func TestMerge(t *testing.T) {
 	mp.Send(2)
 
 	me.Close()
-
 	//merge will not react to this
 	mp.Send(4)
 

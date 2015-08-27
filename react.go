@@ -32,6 +32,7 @@ type SignalMuxHandler func(reactor Reactor, failure error, signal interface{})
 // Reactor provides an interface definition for the reactor type to allow compatibility by future extenders when composing with other structs.
 type Reactor interface {
 	io.Closer
+	CloseIndicator
 	Connector
 	Sender
 	Replier
@@ -45,11 +46,12 @@ type Reactor interface {
 type ReactiveStack struct {
 	ps                    *PressureStream
 	op                    SignalMuxHandler
-	root                  Reactor
+	root, next            Reactor
 	branch, enders, roots *mapReact
 	wg                    sync.WaitGroup
 	ro                    sync.Mutex
 	bit                   int64
+	csignal               chan struct{}
 }
 
 // ReactIdentityProcessor provides the processor for a ReactIdentity
@@ -79,13 +81,15 @@ func Reactive(fx SignalMuxHandler) *ReactiveStack {
 func BuildReactive(fx SignalMuxHandler) *ReactiveStack {
 	data := make(chan interface{})
 	errs := make(chan interface{})
+	csg := make(chan struct{})
 
 	r := ReactiveStack{
-		ps:     BuildPressureStream(data, errs),
-		branch: NewMapReact(),
-		enders: NewMapReact(),
-		roots:  NewMapReact(),
-		op:     fx,
+		ps:      BuildPressureStream(data, errs),
+		branch:  NewMapReact(),
+		enders:  NewMapReact(),
+		roots:   NewMapReact(),
+		op:      fx,
+		csignal: csg,
 	}
 
 	return &r
@@ -127,18 +131,29 @@ func MergeReactors(rs ...Reactor) Reactor {
 	}
 
 	ms := ReactIdentity()
+	var endwrap func()
+
 	for _, si := range rs {
 		func(so Reactor) {
-			var cu int
-			size := len(rs)
-			so.BindControl(ms, func() {
-				if cu == size {
-					ms.Close()
-					return
+			so.Bind(ms, false)
+			if endwrap != nil {
+				oc := endwrap
+				endwrap = func() {
+					<-so.CloseSignal()
+					oc()
 				}
-				cu++
-			})
+			} else {
+				endwrap = func() {
+					<-so.CloseSignal()
+				}
+			}
 		}(si)
+	}
+
+	oldend := endwrap
+	endwrap = func() {
+		defer ms.Close()
+		oldend()
 	}
 
 	return ms
@@ -160,6 +175,7 @@ func (r *ReactiveStack) Close() error {
 	r.ps.Close()
 	// r.roots.Clean()
 	// r.branch.Clean()
+	close(r.csignal)
 	return nil
 }
 
@@ -194,6 +210,16 @@ func (r *ReactiveStack) Manage() {
 			r.op(r, nil, signal)
 		}
 	}
+}
+
+//CloseIndicator was created as a later means of providing a simply indicator of the close state of a Reactor
+type CloseIndicator interface {
+	CloseSignal() <-chan struct{}
+}
+
+// CloseSignal provides a clean means of knowing when a Reactor has closed
+func (r *ReactiveStack) CloseSignal() <-chan struct{} {
+	return r.csignal
 }
 
 // Detacher details the detach interface used by the Reactor
@@ -262,7 +288,6 @@ type Connector interface {
 	Bind(r Reactor, closeAlong bool)
 	// React generates a reactor based off its caller
 	React(s SignalMuxHandler, closeAlong bool) Reactor
-	BindControl(r Reactor, fx func())
 }
 
 // Bind connects a reactor to this reactor as an alternative to a connection by the React() approach
@@ -276,18 +301,6 @@ func (r *ReactiveStack) Bind(rx Reactor, closeAlong bool) {
 	}
 }
 
-// BindControl provides a means of adding an extra control layer for binding,it runs a go-routine that waits till the root is closed to run the supplied function
-func (r *ReactiveStack) BindControl(rx Reactor, fx func()) {
-	r.branch.Add(rx)
-	// r.enders.Add(rx)
-	rx.UseRoot(r)
-
-	go func(ro sync.WaitGroup) {
-		ro.Wait()
-		fx()
-	}(r.wg)
-}
-
 // React creates a reactivestack from this current one with a boolean value
 func (r *ReactiveStack) React(fx SignalMuxHandler, closeAlong bool) Reactor {
 	nx := Reactive(fx)
@@ -298,6 +311,120 @@ func (r *ReactiveStack) React(fx SignalMuxHandler, closeAlong bool) Reactor {
 		r.enders.Add(nx)
 	}
 	return nx
+}
+
+// Stackers provides a construct for providing a strict top-down method call for the Bind,React and BindControl for Reactors,it allows passing these function requests to the last Reactor in the stack while still passing data from the top
+type Stackers struct {
+	Reactor
+	stacks []Connector
+	ro     sync.Mutex
+}
+
+// ErrEmptyStack is returned when a stack is empty
+var ErrEmptyStack = errors.New("Stack Empty")
+
+// ReactorStack returns a Stacker as a reactor with an identity reactor as root
+func ReactorStack() Reactor {
+	return ReactStack(ReactIdentity())
+}
+
+// ReactStack returns a new Reactor based off the Stacker struct which is safe for concurrent use
+func ReactStack(root Reactor) *Stackers {
+	sr := Stackers{Reactor: root}
+	return &sr
+}
+
+// Close wraps the internal close method of the root
+func (sr *Stackers) Close() error {
+	err := sr.Reactor.Close()
+	sr.Clear()
+	return err
+}
+
+// Clear clears the stacks and resolves back to root
+func (sr *Stackers) Clear() {
+	sr.ro.Lock()
+	{
+		sr.stacks = nil
+	}
+	sr.ro.Unlock()
+}
+
+// Last returns the last Reactors stacked
+func (sr *Stackers) Last() (Connector, error) {
+	var r Connector
+	sr.ro.Lock()
+	{
+		l := len(sr.stacks)
+		if l > 0 {
+			r = sr.stacks[l-1]
+		}
+	}
+	sr.ro.Unlock()
+
+	if r == nil {
+		return nil, ErrEmptyStack
+	}
+
+	return r, nil
+}
+
+// Length returns the total stack Reactors
+func (sr *Stackers) Length() int {
+	var l int
+	sr.ro.Lock()
+	{
+		l = len(sr.stacks)
+		sr.ro.Unlock()
+	}
+	return l
+}
+
+// Bind wraps the bind method of the Reactor,if no Reactor has been stack then it binds with the root else gets the last Reactor and binds with that instead
+func (sr *Stackers) Bind(r Reactor, cl bool) {
+	var lr Connector
+	var err error
+
+	if lr, err = sr.Last(); err != nil {
+		sr.Reactor.Bind(r, cl)
+		sr.ro.Lock()
+		{
+			sr.stacks = append(sr.stacks, r)
+		}
+		sr.ro.Unlock()
+		return
+	}
+
+	lr.Bind(r, cl)
+	sr.ro.Lock()
+	{
+		sr.stacks = append(sr.stacks, r)
+	}
+	sr.ro.Unlock()
+}
+
+// React wraps the root React() method and stacks the return Reactor or passes it to the last stacked Reactor and stacks that returned reactor for next use
+func (sr *Stackers) React(s SignalMuxHandler, cl bool) Reactor {
+	var lr Connector
+	var err error
+
+	if lr, err = sr.Last(); err != nil {
+		co := sr.Reactor.React(s, cl)
+		sr.ro.Lock()
+		{
+			sr.stacks = append(sr.stacks, co)
+		}
+		sr.ro.Unlock()
+		return co
+	}
+
+	co := lr.React(s, cl)
+	sr.ro.Lock()
+	{
+		sr.stacks = append(sr.stacks, co)
+	}
+	sr.ro.Unlock()
+	return co
 }
 
 // SendBinder defines the combination of the Sender and Binding interfaces
