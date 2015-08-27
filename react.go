@@ -539,18 +539,18 @@ func (m *mapReact) DisableAll() {
 
 // Close closes all the SenderDetachClosers
 func (m *mapReact) Close() {
-	//TODO find a fix for the rare PK that happens when this clashes with Reactor.Manage()
-	SilentRecoveryHandler("mapreact-close", func() error {
-		m.ro.RLock()
-		for ms, ok := range m.ma {
-			if !ok {
-				continue
-			}
-			ms.Close()
+	// TODO find a fix for the rare PK that happens when this clashes with Reactor.Manage()
+	// SilentRecoveryHandler("mapreact-close", func() error {
+	m.ro.RLock()
+	for ms, ok := range m.ma {
+		if !ok {
+			continue
 		}
-		m.ro.RUnlock()
-		return nil
-	})
+		ms.Close()
+	}
+	m.ro.RUnlock()
+	// return nil
+	// })
 }
 
 // ChannelStream provides a simple struct for exposing outputs from Reactor to outside

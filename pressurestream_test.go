@@ -99,6 +99,8 @@ func TestQueue(t *testing.T) {
 		<-dq
 	}
 
+	runtime.Gosched()
+
 	if ln := qo.Length(); ln != 0 {
 		FatalFailed(t, "Total length of queue incorrect. Execpted %d got %d", 0, ln)
 	}
