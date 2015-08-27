@@ -91,6 +91,59 @@ func BuildReactive(fx SignalMuxHandler) *ReactiveStack {
 	return &r
 }
 
+// LiftOnly calls the Lift function to lift the Reactors and sets the close
+// bool to false to prevent closing each other
+func LiftOnly(rs ...Reactor) {
+	Lift(false, rs...)
+}
+
+// Lift takes a set of Connectors and pipes the data from one to the next
+func Lift(conClose bool, rs ...Reactor) {
+	if len(rs) <= 1 {
+		return
+	}
+
+	var cur Reactor
+
+	cur = rs[0]
+	rs = rs[1:]
+
+	for _, co := range rs {
+		func(cl Reactor) {
+			cur.Bind(cl, conClose)
+			cur = cl
+		}(co)
+	}
+}
+
+// MergeReactors merges data from a set of Senders into a new reactor stream
+func MergeReactors(rs ...Reactor) Reactor {
+	if len(rs) == 0 {
+		return nil
+	}
+
+	if len(rs) == 1 {
+		return rs[0]
+	}
+
+	ms := ReactIdentity()
+	for _, si := range rs {
+		func(so Reactor) {
+			var cu int
+			size := len(rs)
+			so.BindControl(ms, func() {
+				if cu == size {
+					ms.Close()
+					return
+				}
+				cu++
+			})
+		}(si)
+	}
+
+	return ms
+}
+
 // Close ends signaling operation to the next stack its closing
 func (r *ReactiveStack) Close() error {
 	if atomic.LoadInt64(&r.bit) > 0 {
@@ -172,7 +225,7 @@ func (r *ReactiveStack) Send(d interface{}) {
 	r.ps.SendSignal(d)
 }
 
-// DistributeSignals provide a function that takes a React and other multiple Reactor and distribute the data from the first reactor to others
+// DistributeSignals provide a function that takes a React and other multiple Reactors and distribute the data from the first reactor to others
 func DistributeSignals(rs Reactor, ms ...Sender) Reactor {
 	return rs.React(func(r Reactor, err error, data interface{}) {
 		for _, mi := range ms {
@@ -253,23 +306,10 @@ type SendBinder interface {
 	Connector
 }
 
-// MergeReactors merges data from a set of Senders into a new reactor stream
-func MergeReactors(rs ...SendBinder) Reactor {
-	ms := ReactIdentity()
-	for _, si := range rs {
-		func(so SendBinder) {
-			var cu int
-			size := len(rs)
-			so.BindControl(ms, func() {
-				if cu == size {
-					ms.Close()
-					return
-				}
-				cu++
-			})
-		}(si)
-	}
-	return ms
+// SenderReplier provides the interface for the combination of senders and repliers
+type SenderReplier interface {
+	Replier
+	Sender
 }
 
 // ReplierCloser provides an interface that combines Replier and Closer interfaces

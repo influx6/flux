@@ -51,7 +51,7 @@ func TestMousePosition(t *testing.T) {
 	LogPassed(t, "Total mouse data was processed with count %d", count)
 }
 
-// TestPartyOf2 test two independent reactors binding to each other using the bind option with a small dangerous trick (can we create a feedback queue endlessly)
+// TestPartyOf2 test two independent reactors binding
 func TestPartyOf2(t *testing.T) {
 	var ws sync.WaitGroup
 	ws.Add(2)
@@ -94,10 +94,78 @@ func TestMerge(t *testing.T) {
 
 	me.Close()
 
+	//merge will not react to this
 	mp.Send(4)
 
 	ws.Wait()
 
 	mo.Close()
 	mp.Close()
+}
+
+func TestDistribute(t *testing.T) {
+	var ws sync.WaitGroup
+	ws.Add(300)
+
+	master := ReactIdentity()
+
+	slave := Reactive(func(r Reactor, err error, data interface{}) {
+		if _, ok := data.(int); !ok {
+			FatalFailed(t, "Data %+v is not int type", data)
+		}
+		ws.Done()
+	})
+
+	slave2 := Reactive(func(r Reactor, err error, data interface{}) {
+		if _, ok := data.(int); !ok {
+			FatalFailed(t, "Data %+v is not int type", data)
+		}
+		ws.Done()
+	})
+
+	DistributeSignals(master, slave, slave2)
+
+	for i := 0; i < 150; i++ {
+		master.Send(i)
+	}
+	LogPassed(t, "Successfully Sent 150 numbers")
+
+	ws.Wait()
+
+	LogPassed(t, "Successfully Processed 150 numbers")
+	master.Close()
+	slave.Close()
+	slave2.Close()
+}
+
+func TestLift(t *testing.T) {
+	var ws sync.WaitGroup
+	ws.Add(2)
+
+	master := ReactIdentity()
+
+	slave := Reactive(func(r Reactor, err error, data interface{}) {
+		if data != 40 {
+			FatalFailed(t, "Incorrect value recieved,expect %d got %d", 40, data)
+		}
+		r.Reply(data.(int) * 20)
+		ws.Done()
+	})
+
+	slave.React(func(r Reactor, err error, data interface{}) {
+		if data != 800 {
+			FatalFailed(t, "Incorrect value recieved,expect %d got %d", 800, data)
+		}
+		ws.Done()
+	}, true)
+
+	Lift(true, master, slave)
+
+	master.Send(40)
+
+	ws.Wait()
+
+	LogPassed(t, "Successfully Lifted numbers between 2 Reactors")
+	master.Close()
+	slave.Close()
 }
