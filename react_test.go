@@ -144,17 +144,22 @@ func TestPartyOf2(t *testing.T) {
 }
 
 func TestMerge(t *testing.T) {
+	var ws sync.WaitGroup
+	ws.Add(2)
+
 	mo := ReactIdentity()
 	mp := ReactIdentity()
 
 	me := MergeReactors(mo, mp)
 
 	me.React(func(v Reactor, err error, data interface{}) {
+		ws.Done()
 	}, true)
 
 	mo.Send(1)
 	mp.Send(2)
 
+	ws.Wait()
 	me.Close()
 	//merge will not react to this
 	mp.Send(4)
@@ -201,9 +206,13 @@ func TestDistribute(t *testing.T) {
 }
 
 func TestLift(t *testing.T) {
+	var ws sync.WaitGroup
+	ws.Add(2)
+
 	master := ReactIdentity()
 
 	slave := Reactive(func(r Reactor, err error, data interface{}) {
+		ws.Done()
 		if data != 40 {
 			FatalFailed(t, "Incorrect value recieved,expect %d got %d", 40, data)
 		}
@@ -211,6 +220,7 @@ func TestLift(t *testing.T) {
 	})
 
 	slave.React(func(r Reactor, err error, data interface{}) {
+		ws.Done()
 		if data != 800 {
 			FatalFailed(t, "Incorrect value recieved,expect %d got %d", 800, data)
 		}
@@ -220,8 +230,10 @@ func TestLift(t *testing.T) {
 
 	master.Send(40)
 
+	ws.Wait()
+
 	slave.Close()
-	<-slave.CloseSignal()
+	// <-slave.CloseSignal()
 
 	LogPassed(t, "Successfully Lifted numbers between 2 Reactors")
 	master.Close()
