@@ -1,8 +1,11 @@
 package flux
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"sync"
 	"sync/atomic"
 )
@@ -565,4 +568,50 @@ func NewChannelStream() *ChannelStream {
 		Data:   make(chan interface{}),
 		Errors: make(chan error),
 	}
+}
+
+// JSONReactor provides a json encoding Reactor,takes any input and tries to transform it into a json using the default json.Marshal function
+func JSONReactor() Reactor {
+	return Reactive(func(r Reactor, err error, d interface{}) {
+		if err != nil {
+			r.ReplyError(err)
+			return
+		}
+
+		jsonbu, err := json.Marshal(d)
+
+		if err != nil {
+			r.ReplyError(err)
+			return
+		}
+
+		r.Reply(jsonbu)
+	})
+}
+
+// FileLoader provides an adaptor to load a file path
+func FileLoader() Reactor {
+	return Reactive(func(v Reactor, err error, d interface{}) {
+		if err != nil {
+			v.ReplyError(err)
+			return
+		}
+
+		var file string
+		var ok bool
+
+		if file, ok = d.(string); !ok {
+			v.ReplyError(fmt.Errorf("%q is not a string type", d))
+			return
+		}
+
+		var data []byte
+
+		if data, err = ioutil.ReadFile(file); err != nil {
+			v.ReplyError(err)
+			return
+		}
+
+		v.Reply(string(data))
+	})
 }

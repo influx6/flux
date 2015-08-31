@@ -27,7 +27,7 @@ type FatalPrinter interface {
 
 //FatalFailed uses the log to print out the failed message
 func FatalFailed(fr FatalPrinter, msg string, v ...interface{}) {
-	fr.Fatal(Passed(msg, v...))
+	fr.Fatal(Failed(msg, v...))
 }
 
 //FatalPassed uses the log to print out the passed message
@@ -42,7 +42,7 @@ type LogPrinter interface {
 
 //LogFailed uses the log to print out the failed message
 func LogFailed(pr LogPrinter, msg string, v ...interface{}) {
-	pr.Log(Passed(msg, v...))
+	pr.Log(Failed(msg, v...))
 }
 
 //LogPassed uses the log to print out the passed message
