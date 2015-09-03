@@ -54,7 +54,7 @@ type ReactiveStack struct {
 	wg                    sync.WaitGroup
 	ro                    sync.Mutex
 	bit                   int64
-	csignal               chan struct{}
+	csignal               chan bool
 }
 
 // ReactIdentityProcessor provides the processor for a ReactIdentity
@@ -84,7 +84,7 @@ func Reactive(fx SignalMuxHandler) *ReactiveStack {
 func BuildReactive(fx SignalMuxHandler) *ReactiveStack {
 	data := make(chan interface{})
 	errs := make(chan interface{})
-	csg := make(chan struct{})
+	csg := make(chan bool)
 
 	r := ReactiveStack{
 		ps:      BuildPressureStream(data, errs),
@@ -142,12 +142,12 @@ func MergeReactors(rs ...Reactor) Reactor {
 			if endwrap != nil {
 				oc := endwrap
 				endwrap = func() {
-					<-so.CloseSignal()
+					<-so.CloseNotify()
 					oc()
 				}
 			} else {
 				endwrap = func() {
-					<-so.CloseSignal()
+					<-so.CloseNotify()
 				}
 			}
 		}(si)
@@ -214,11 +214,11 @@ func (r *ReactiveStack) Manage() {
 
 //CloseIndicator was created as a later means of providing a simply indicator of the close state of a Reactor
 type CloseIndicator interface {
-	CloseSignal() <-chan struct{}
+	CloseNotify() <-chan bool
 }
 
-// CloseSignal provides a clean means of knowing when a Reactor has closed
-func (r *ReactiveStack) CloseSignal() <-chan struct{} {
+// CloseNotify provides a clean means of knowing when a Reactor has closed
+func (r *ReactiveStack) CloseNotify() <-chan bool {
 	return r.csignal
 }
 
