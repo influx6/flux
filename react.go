@@ -47,9 +47,9 @@ type Reactor interface {
 
 // ReactiveStack provides a concrete implementation
 type ReactiveStack struct {
-	ps                    *PressureStream
-	op                    SignalMuxHandler
-	root, next            Reactor
+	ps *PressureStream
+	op SignalMuxHandler
+	// root, next            Reactor
 	branch, enders, roots *mapReact
 	wg                    sync.WaitGroup
 	ro                    sync.Mutex

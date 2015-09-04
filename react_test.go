@@ -164,7 +164,7 @@ func TestMerge(t *testing.T) {
 	//merge will not react to this
 	mp.Send(4)
 
-	<-me.CloseSignal()
+	<-me.CloseNotify()
 
 	mo.Close()
 	mp.Close()

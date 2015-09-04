@@ -219,7 +219,7 @@ func SilentRecoveryHandler(tag string, opFunc func() error) error {
 func RecoveryHandler(tag string, opFunc func() error) error {
 	defer func() {
 		if err := recover(); err != nil {
-			trace := make([]byte, 1024)
+			trace := make([]byte, 10000)
 			count := runtime.Stack(trace, true)
 			log.Printf("---------%s-Panic----------------:", strings.ToUpper(tag))
 			log.Printf("Error: %+s", err)
