@@ -235,6 +235,43 @@ func RecoveryHandler(tag string, opFunc func() error) error {
 	return nil
 }
 
+// SilentRecoveryHandlerCallback provides a recovery handler functions for use to automate the recovery processes
+func SilentRecoveryHandlerCallback(tag string, opFunc func() error, cb func(interface{})) error {
+	defer func() {
+		if err := recover(); err != nil {
+			cb(err)
+			return
+		}
+	}()
+
+	if err := opFunc(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+//RecoveryHandlerCallback provides a recovery handler functions for use to automate the recovery processes
+func RecoveryHandlerCallback(tag string, opFunc func() error, cb func(interface{})) error {
+	defer func() {
+		if err := recover(); err != nil {
+			cb(err)
+			trace := make([]byte, 10000)
+			count := runtime.Stack(trace, true)
+			log.Printf("---------%s-Panic----------------:", strings.ToUpper(tag))
+			log.Printf("Error: %+s", err)
+			log.Printf("Stack of %d bytes: %+s\n", count, trace)
+			log.Printf("---------%s--END-----------------:", strings.ToUpper(tag))
+		}
+	}()
+
+	if err := opFunc(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 //GoDefer letsw you run a function inside a goroutine that gets a defer recovery
 func GoDefer(title string, fx func()) {
 	go RecoveryHandler(title, func() error {
@@ -249,6 +286,22 @@ func GoSilent(title string, fx func()) {
 		fx()
 		return nil
 	})
+}
+
+//GoDeferCall letsw you run a function inside a goroutine that gets a defer recovery
+func GoDeferCall(title string, fx func(), cb func(interface{})) {
+	go RecoveryHandlerCallback(title, func() error {
+		fx()
+		return nil
+	}, cb)
+}
+
+//GoSilentCall lets you run a function inside a goroutine that gets a defer recovery
+func GoSilentCall(title string, fx func(), cb func(interface{})) {
+	go SilentRecoveryHandlerCallback(title, func() error {
+		fx()
+		return nil
+	}, cb)
 }
 
 //Close provides a basic io.WriteCloser write method
