@@ -7,15 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"sync"
-	"sync/atomic"
 )
-
-/* Reactors define an the idea of continous, reactive change which is a revised implementation of FRP principles with a golang view and approach. Reactor are like a reactive queue where each reactor builds off a previous reactor to allow a simple top-down flow of data.
-This approach lends itself from very simple streaming operations to complex stream processing systems.
-Due to the use of unbuffered channels, Reactor require that the next keep the rule of the channel contract
-.i.e a reactor channel must have someone to collect/listen/retrieve the data within it and
-ensure a continouse operation else close and end the reactor
-*/
 
 // ErrFailedBind represent a failure in binding two Reactors
 var ErrFailedBind = errors.New("Failed to Bind Reactors")
@@ -42,23 +34,44 @@ type Reactor interface {
 	Detacher
 
 	UseRoot(Reactor)
-	Manage()
 }
 
-// ReactiveStack provides a concrete implementation
-type ReactiveStack struct {
-	ps *PressureStream
+// FlatReactor provides a pure functional reactor
+type FlatReactor struct {
 	op SignalMuxHandler
-	// root, next            Reactor
-	branch, enders, roots *mapReact
-	wg                    sync.WaitGroup
-	ro                    sync.Mutex
-	bit                   int64
-	csignal               chan bool
+	// root,next Reactor
+	branches, enders, roots *mapReact
+	csignal                 chan bool
+	wo                      sync.Mutex
+	wg                      sync.WaitGroup
+	closed                  bool
 }
 
-// ReactIdentityProcessor provides the processor for a ReactIdentity
-func ReactIdentityProcessor() SignalMuxHandler {
+// Reactive returns a ReactiveStacks
+func Reactive(fx SignalMuxHandler) Reactor {
+	return FlatReactive(fx)
+}
+
+// FlatReactive returns a new functional reactor
+func FlatReactive(op SignalMuxHandler) *FlatReactor {
+	fr := FlatReactor{
+		op:       op,
+		branches: NewMapReact(),
+		enders:   NewMapReact(),
+		roots:    NewMapReact(),
+		csignal:  make(chan bool),
+	}
+
+	return &fr
+}
+
+// FlatStack returns a flat reactor
+func FlatStack() Reactor {
+	return ReactStack(ReactIdentity())
+}
+
+// IdentityMuxer provides the handoler for a providing a pure piping behaviour where data is left untouched as it comes in and goes out
+func IdentityMuxer() SignalMuxHandler {
 	return func(r Reactor, err error, data interface{}) {
 		if err != nil {
 			r.ReplyError(err)
@@ -68,34 +81,20 @@ func ReactIdentityProcessor() SignalMuxHandler {
 	}
 }
 
-// ReactIdentity returns a reactor that passes on its request to its listeners if any without modification
+// FlatIdentity returns flatreactor that resends its inputs as outputs with no changes
+func FlatIdentity() *FlatReactor {
+	return FlatReactive(IdentityMuxer())
+}
+
+// ReactIdentity is more written to provide a backward compatibility for cold using the old
+//channel based reactor
 func ReactIdentity() Reactor {
-	return Reactive(ReactIdentityProcessor())
+	return FlatIdentity()
 }
 
-// Reactive returns a ReactiveStacks
-func Reactive(fx SignalMuxHandler) *ReactiveStack {
-	r := BuildReactive(fx)
-	go r.Manage()
-	return r
-}
-
-// BuildReactive returns a Reactor without calling the Manager processor,this is to allow a more control managment of the operation of the Reactor e.g pass the process up to a Work Pool
-func BuildReactive(fx SignalMuxHandler) *ReactiveStack {
-	data := make(chan interface{})
-	errs := make(chan interface{})
-	csg := make(chan bool)
-
-	r := ReactiveStack{
-		ps:      BuildPressureStream(data, errs),
-		branch:  NewMapReact(),
-		enders:  NewMapReact(),
-		roots:   NewMapReact(),
-		op:      fx,
-		csignal: csg,
-	}
-
-	return &r
+// UseRoot Adds this reactor as a root of the called reactor
+func (f *FlatReactor) UseRoot(rx Reactor) {
+	f.roots.Add(rx)
 }
 
 // LiftOnly calls the Lift function to lift the Reactors and sets the close
@@ -161,65 +160,64 @@ func MergeReactors(rs ...Reactor) Reactor {
 	return ms
 }
 
-// Close ends signaling operation to the next stack its closing
-func (r *ReactiveStack) Close() error {
-	if atomic.LoadInt64(&r.bit) > 0 {
-		return ErrReactorClosed
-	}
-
-	r.roots.Do(func(rm SenderDetachCloser) {
-		rm.Detach(r)
-	})
-
-	r.wg.Wait()
-	atomic.StoreInt64(&r.bit, 1)
-
-	r.ps.Close()
-	close(r.csignal)
-	return nil
-}
-
-// UseRoot adds a new root as part of the reactor roots
-func (r *ReactiveStack) UseRoot(rx Reactor) {
-	r.roots.Add(rx)
-}
-
 // Manage manages the operations of reactor
-func (r *ReactiveStack) Manage() {
-	defer func() {
-		r.enders.Close()
-		r.roots.Clean()
-		r.branch.Clean()
-	}()
-
-	for {
-		select {
-		case err, ok := <-r.ps.Errors:
-			if !ok {
-				return
-			}
-			r.wg.Done()
-			// go r.op(r, err.(error), nil)
-			r.op(r, err.(error), nil)
-		case signal, ok := <-r.ps.Signals:
-			if !ok {
-				return
-			}
-			r.wg.Done()
-			// go r.op(r, nil, signal)
-			r.op(r, nil, signal)
-		}
-	}
-}
+// func (r *ReactiveStack) Manage() {
+// 	defer func() {
+// 		r.enders.Close()
+// 		r.roots.Clean()
+// 		r.branch.Clean()
+// 	}()
+//
+// 	for {
+// 		select {
+// 		case err, ok := <-r.ps.Errors:
+// 			if !ok {
+// 				return
+// 			}
+// 			r.wg.Done()
+// 			// go r.op(r, err.(error), nil)
+// 			r.op(r, err.(error), nil)
+// 		case signal, ok := <-r.ps.Signals:
+// 			if !ok {
+// 				return
+// 			}
+// 			r.wg.Done()
+// 			// go r.op(r, nil, signal)
+// 			r.op(r, nil, signal)
+// 		}
+// 	}
+// }
 
 //CloseIndicator was created as a later means of providing a simply indicator of the close state of a Reactor
 type CloseIndicator interface {
 	CloseNotify() <-chan bool
 }
 
-// CloseNotify provides a clean means of knowing when a Reactor has closed
-func (r *ReactiveStack) CloseNotify() <-chan bool {
-	return r.csignal
+// CloseNotify provides a channel for notifying a close event
+func (f *FlatReactor) CloseNotify() <-chan bool {
+	return f.csignal
+}
+
+// Close closes the reactor and removes all connections
+func (f *FlatReactor) Close() error {
+	if f.closed {
+		return nil
+	}
+
+	f.wg.Wait()
+	f.closed = true
+
+	f.branches.Close()
+
+	f.roots.Do(func(rm SenderDetachCloser) {
+		go rm.Detach(f)
+	})
+
+	f.roots.Close()
+	f.enders.Close()
+
+	close(f.csignal)
+	return nil
 }
 
 // Detacher details the detach interface used by the Reactor
@@ -227,10 +225,10 @@ type Detacher interface {
 	Detach(Reactor)
 }
 
-// Detach nullifies the next link of this Reactor
-func (r *ReactiveStack) Detach(rm Reactor) {
-	r.enders.Disable(rm)
-	r.branch.Disable(rm)
+// Detach removes the given reactor from its connections
+func (f *FlatReactor) Detach(rm Reactor) {
+	f.enders.Disable(rm)
+	f.branches.Disable(rm)
 }
 
 // Sender defines the delivery methods used to deliver data into Reactor process
@@ -239,16 +237,18 @@ type Sender interface {
 	SendError(v error)
 }
 
-// SendError returns the in-put pipe
-func (r *ReactiveStack) SendError(e error) {
-	r.wg.Add(1)
-	r.ps.SendError(e)
+// Send applies a message value to the handler
+func (f *FlatReactor) Send(b interface{}) {
+	f.wg.Add(1)
+	defer f.wg.Done()
+	f.op(f, nil, b)
 }
 
-// Send returns the in-put pipe
-func (r *ReactiveStack) Send(d interface{}) {
-	r.wg.Add(1)
-	r.ps.SendSignal(d)
+// SendError applies a error value to the handler
+func (f *FlatReactor) SendError(err error) {
+	f.wg.Add(1)
+	defer f.wg.Done()
+	f.op(f, err, nil)
 }
 
 // DistributeSignals provide a function that takes a React and other multiple Reactors and distribute the data from the first reactor to others
@@ -272,14 +272,14 @@ type Replier interface {
 	ReplyError(v error)
 }
 
-// Reply returns the out-put pipe
-func (r *ReactiveStack) Reply(d interface{}) {
-	r.branch.Deliver(nil, d)
+//Reply allows the reply of an data message
+func (f *FlatReactor) Reply(v interface{}) {
+	f.branches.Deliver(nil, v)
 }
 
-// ReplyError returns the out-put pipe
-func (r *ReactiveStack) ReplyError(err error) {
-	r.branch.Deliver(err, nil)
+//ReplyError allows the reply of an error message
+func (f *FlatReactor) ReplyError(err error) {
+	f.branches.Deliver(err, nil)
 }
 
 // Connector defines the core connecting methods used for binding with a Reactor
@@ -290,26 +290,27 @@ type Connector interface {
 	React(s SignalMuxHandler, closeAlong bool) Reactor
 }
 
-// Bind connects a reactor to this reactor as an alternative to a connection by the React() approach
-func (r *ReactiveStack) Bind(rx Reactor, closeAlong bool) {
+// Bind connects two reactors
+func (f *FlatReactor) Bind(rx Reactor, cl bool) {
+	f.branches.Add(rx)
+	rx.UseRoot(f)
 
-	r.branch.Add(rx)
-	rx.UseRoot(r)
-
-	if closeAlong {
-		r.enders.Add(rx)
+	if cl {
+		f.enders.Add(rx)
 	}
 }
 
-// React creates a reactivestack from this current one with a boolean value
-func (r *ReactiveStack) React(fx SignalMuxHandler, closeAlong bool) Reactor {
-	nx := Reactive(fx)
-	nx.UseRoot(r)
+// React builds a new reactor from this one
+func (f *FlatReactor) React(op SignalMuxHandler, cl bool) Reactor {
+	nx := FlatReactive(op)
+	nx.UseRoot(f)
 
-	r.branch.Add(nx)
-	if closeAlong {
-		r.enders.Add(nx)
+	f.branches.Add(nx)
+
+	if cl {
+		f.enders.Add(nx)
 	}
+
 	return nx
 }
 
@@ -507,10 +508,10 @@ func (m *mapReact) Add(r SenderDetachCloser) {
 // Disable a particular sender
 func (m *mapReact) Disable(r SenderDetachCloser) {
 	m.ro.Lock()
+	defer m.ro.Unlock()
 	if _, ok := m.ma[r]; ok {
 		m.ma[r] = false
 	}
-	m.ro.Unlock()
 }
 
 // Length returns the length of the map
