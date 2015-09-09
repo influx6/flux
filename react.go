@@ -616,3 +616,28 @@ func FileLoader() Reactor {
 		v.Reply(string(data))
 	})
 }
+
+// QueueReactor provides a reactor that listens on the supplied
+// queue for data and error messages but if the queue gets closed then
+//the reactor is closed along
+func QueueReactor(ps *PressureStream) (qr Reactor) {
+	qr = ReactIdentity()
+	GoDefer("ReactorQueue:Manage", func() {
+		defer qr.Close()
+		for {
+			select {
+			case d, ok := <-ps.Signals:
+				if !ok {
+					return
+				}
+				qr.Send(d)
+			case e, ok := <-ps.Errors:
+				if !ok {
+					return
+				}
+				qr.SendError(e.(error))
+			}
+		}
+	})
+	return
+}
