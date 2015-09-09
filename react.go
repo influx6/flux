@@ -210,7 +210,7 @@ func (f *FlatReactor) Close() error {
 	f.branches.Close()
 
 	f.roots.Do(func(rm SenderDetachCloser) {
-		go rm.Detach(f)
+		rm.Detach(f)
 	})
 
 	f.roots.Close()
@@ -507,8 +507,8 @@ func (m *mapReact) Add(r SenderDetachCloser) {
 
 // Disable a particular sender
 func (m *mapReact) Disable(r SenderDetachCloser) {
-	m.ro.Lock()
-	defer m.ro.Unlock()
+	m.ro.RLock()
+	defer m.ro.RUnlock()
 	if _, ok := m.ma[r]; ok {
 		m.ma[r] = false
 	}

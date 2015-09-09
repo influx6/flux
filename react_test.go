@@ -1,7 +1,6 @@
 package flux
 
 import (
-	"log"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -138,6 +137,8 @@ func TestPartyOf2(t *testing.T) {
 }
 
 func TestMerge(t *testing.T) {
+	var ws sync.WaitGroup
+	ws.Add(2)
 
 	mo := ReactIdentity()
 	mp := ReactIdentity()
@@ -145,12 +146,13 @@ func TestMerge(t *testing.T) {
 	me := MergeReactors(mo, mp)
 
 	me.React(func(v Reactor, err error, data interface{}) {
-		log.Printf("data:", data)
+		ws.Done()
 	}, true)
 
 	mo.Send(1)
 	mp.Send(2)
 
+	ws.Wait()
 	me.Close()
 	//merge will not react to this
 	mp.Send(4)
