@@ -233,7 +233,17 @@ type Mappable interface {
 //SecureMap simple represents a map with a rwmutex locked in
 type SecureMap struct {
 	data map[interface{}]interface{}
-	lock *sync.RWMutex
+	lock sync.RWMutex
+}
+
+//NewSecureMap returns a new securemap
+func NewSecureMap() *SecureMap {
+	return &SecureMap{data: make(map[interface{}]interface{})}
+}
+
+//SecureMapFrom returns a new securemap
+func SecureMapFrom(core map[interface{}]interface{}) *SecureMap {
+	return &SecureMap{data: core}
 }
 
 //Clear unlinks the previous map
@@ -344,23 +354,20 @@ func (m *SecureMap) Remove(key interface{}) {
 	m.lock.Unlock()
 }
 
-//NewSecureMap returns a new securemap
-func NewSecureMap() *SecureMap {
-	return &SecureMap{make(map[interface{}]interface{}), new(sync.RWMutex)}
-}
-
-//SecureMapFrom returns a new securemap
-func SecureMapFrom(core map[interface{}]interface{}) *SecureMap {
-	return &SecureMap{core, new(sync.RWMutex)}
-}
-
 //SecureStack provides addition of functions into a stack
 type SecureStack struct {
 	listeners []interface{}
-	lock      *sync.RWMutex
+	lock      sync.RWMutex
 }
 
-//Splice returns a new splice from the list
+//NewSecureStack returns a new concurrent safe array decorator
+func NewSecureStack() *SecureStack {
+	return &SecureStack{
+		listeners: make([]interface{}, 0),
+	}
+}
+
+//Splice returns a new unique slice from the list
 func (f *SecureStack) Splice(begin, end int) []interface{} {
 	size := f.Size()
 
@@ -455,11 +462,17 @@ func (f *SecureStack) Delete(ind int) {
 		return
 	}
 
-	f.lock.RLock()
+	f.lock.Lock()
 	copy(f.listeners[ind:], f.listeners[ind+1:])
+	f.lock.Unlock()
+
+	f.lock.RLock()
 	f.listeners[len(f.listeners)-1] = nil
-	f.listeners = f.listeners[:len(f.listeners)-1]
 	f.lock.RUnlock()
+
+	f.lock.Lock()
+	f.listeners = f.listeners[:len(f.listeners)-1]
+	f.lock.Unlock()
 
 }
 
@@ -479,7 +492,14 @@ func (f *SecureStack) Each(fx func(interface{})) {
 //FunctionStack provides addition of functions into a stack
 type FunctionStack struct {
 	listeners []func(...interface{})
-	lock      *sync.RWMutex
+	lock      sync.RWMutex
+}
+
+//NewFunctionStack returns a new functionstack instance
+func NewFunctionStack() *FunctionStack {
+	return &FunctionStack{
+		listeners: make([]func(...interface{}), 0),
+	}
 }
 
 //Clear flushes the stack listener
@@ -499,10 +519,16 @@ func (f *FunctionStack) Size() int {
 
 //Add adds a function into the stack
 func (f *FunctionStack) Add(fx func(...interface{})) int {
+	var ind int
+
+	f.lock.RLock()
+	ind = len(f.listeners)
+	f.lock.RUnlock()
+
 	f.lock.Lock()
-	ind := len(f.listeners)
 	f.listeners = append(f.listeners, fx)
 	f.lock.Unlock()
+
 	return ind
 }
 
@@ -513,11 +539,17 @@ func (f *FunctionStack) Delete(ind int) {
 		return
 	}
 
-	f.lock.RLock()
+	f.lock.Lock()
 	copy(f.listeners[ind:], f.listeners[ind+1:])
+	f.lock.Unlock()
+
+	f.lock.RLock()
 	f.listeners[len(f.listeners)-1] = nil
-	f.listeners = f.listeners[:len(f.listeners)-1]
 	f.lock.RUnlock()
+
+	f.lock.Lock()
+	f.listeners = f.listeners[:len(f.listeners)-1]
+	f.lock.Unlock()
 
 }
 
@@ -534,38 +566,43 @@ func (f *FunctionStack) Each(d ...interface{}) {
 	f.lock.RUnlock()
 }
 
+//Splice returns a new unique slice from the list
+// func (f *SecureStack) Splice(begin, end int) []interface{} {
+// 	size := f.Size()
+//
+// 	if end > size {
+// 		end = size
+// 	}
+//
+// 	f.lock.RLock()
+// 	ms := f.listeners[begin:end]
+// 	f.lock.RUnlock()
+// 	var dup []interface{}
+// 	dup = append(dup, ms...)
+// 	return dup
+// }
+
 //SingleStack provides a function stack fro single argument
 //functions
 type SingleStack struct {
 	*FunctionStack
 }
 
-//Add adds a function into the stack
-func (s *SingleStack) Add(fx func(interface{})) int {
-	return s.FunctionStack.Add(func(f ...interface{}) {
-		fx(f[0])
-	})
-}
-
-//NewSecureStack returns a new functionstack instance
-func NewSecureStack() *SecureStack {
-	return &SecureStack{
-		make([]interface{}, 0),
-		new(sync.RWMutex),
-	}
-}
-
-//NewFunctionStack returns a new functionstack instance
-func NewFunctionStack() *FunctionStack {
-	return &FunctionStack{
-		make([]func(...interface{}), 0),
-		new(sync.RWMutex),
-	}
-}
-
 //NewSingleStack returns a singlestack instance
 func NewSingleStack() *SingleStack {
 	return &SingleStack{
-		NewFunctionStack(),
+		FunctionStack: NewFunctionStack(),
 	}
+}
+
+//Add adds a function into the stack
+func (s *SingleStack) Add(fx func(interface{})) int {
+	return s.FunctionStack.Add(func(f ...interface{}) {
+		if len(f) <= 0 {
+			fx(nil)
+			return
+		}
+
+		fx(f[0])
+	})
 }
