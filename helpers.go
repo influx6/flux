@@ -221,6 +221,7 @@ func RecoveryHandler(tag string, opFunc func() error) error {
 		if err := recover(); err != nil {
 			trace := make([]byte, 10000)
 			count := runtime.Stack(trace, true)
+			trace = trace[:count]
 			log.Printf("---------%s-Panic----------------:", strings.ToUpper(tag))
 			log.Printf("Error: %+s", err)
 			log.Printf("Stack of %d bytes: %+s\n", count, trace)

@@ -70,6 +70,17 @@ func FlatStack() Reactor {
 	return ReactStack(ReactIdentity())
 }
 
+// IdentityValueMuxer provides the handler for a providing a pure piping behaviour where data passed in is used as the return data value
+func IdentityValueMuxer(v interface{}) SignalMuxHandler {
+	return func(r Reactor, err error, _ interface{}) {
+		if err != nil {
+			r.ReplyError(err)
+			return
+		}
+		r.Reply(v)
+	}
+}
+
 // IdentityMuxer provides the handoler for a providing a pure piping behaviour where data is left untouched as it comes in and goes out
 func IdentityMuxer() SignalMuxHandler {
 	return func(r Reactor, err error, data interface{}) {
@@ -84,6 +95,11 @@ func IdentityMuxer() SignalMuxHandler {
 // FlatIdentity returns flatreactor that resends its inputs as outputs with no changes
 func FlatIdentity() *FlatReactor {
 	return FlatReactive(IdentityMuxer())
+}
+
+// FlatAlways returns a reactor with consistently returns the provided value
+func FlatAlways(v interface{}) Reactor {
+	return FlatReactive(IdentityValueMuxer(v))
 }
 
 // ReactIdentity is more written to provide a backward compatibility for cold using the old
@@ -434,20 +450,42 @@ type SendBinder interface {
 	Connector
 }
 
-// SenderReplier provides the interface for the combination of senders and repliers
-type SenderReplier interface {
+// SendReplier provides the interface for the combination of senders and repliers
+type SendReplier interface {
 	Replier
 	Sender
 }
 
-// ReplierCloser provides an interface that combines Replier and Closer interfaces
-type ReplierCloser interface {
+// SendReplyCloser provides the interface for the combination of closers,senders and repliers
+type SendReplyCloser interface {
+	io.Closer
+	Replier
+	Sender
+}
+
+// SendReplyDetacher provides the interface for the combination of senders,detachers and repliers
+type SendReplyDetacher interface {
+	Replier
+	Sender
+	Detacher
+}
+
+// SendReplyDetachCloser provides the interface for the combination of closers, senders,detachers and repliers
+type SendReplyDetachCloser interface {
+	io.Closer
+	Replier
+	Sender
+	Detacher
+}
+
+// ReplyCloser provides an interface that combines Replier and Closer interfaces
+type ReplyCloser interface {
 	Replier
 	io.Closer
 }
 
-// SenderCloser provides an interface that combines Sender and Closer interfaces
-type SenderCloser interface {
+// SendCloser provides an interface that combines Sender and Closer interfaces
+type SendCloser interface {
 	Sender
 	io.Closer
 }
