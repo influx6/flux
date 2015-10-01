@@ -144,7 +144,7 @@ func TestUnfinishedQueue(t *testing.T) {
 	runtime.Gosched()
 
 	//length should equal to around 4000
-	if ln := qo.Length(); ln <= 4000 {
+	if ln := qo.Length(); ln > 4000 {
 		FatalFailed(t, "Total length of queue incorrect. Execpted %d got %d", 4000, ln)
 	}
 
