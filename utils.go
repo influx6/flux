@@ -1,14 +1,21 @@
 package flux
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"math"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
 var elapso = regexp.MustCompile(`(\d+)(\w+)`)
+
+// Capitalize capitalizes the first character in a string
+func Capitalize(s string) string {
+	return strings.ToUpper(s[:1]) + s[1:]
+}
 
 //MakeDuration allows you to make create a duration from a string
 func MakeDuration(target string, def int) time.Duration {
@@ -71,4 +78,26 @@ func messageSizeToBitLength(messageSize int) int {
 	bytes := float64(messageSize)
 	header := math.Ceil(math.Floor(math.Log2(bytes)+1) / 8.0)
 	return int(header)
+}
+
+// RandString generates a set of random numbers of a set length
+func RandString(n int) string {
+	const alphanum = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	var bytes = make([]byte, n)
+	rand.Read(bytes)
+	for i, b := range bytes {
+		bytes[i] = alphanum[b%byte(len(alphanum))]
+	}
+	return string(bytes)
+}
+
+// RandAlpha generates a set of random numbers of a set length
+func RandAlpha(n int) string {
+	const alphanum = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	var bytes = make([]byte, n)
+	rand.Read(bytes)
+	for i, b := range bytes {
+		bytes[i] = alphanum[b%byte(len(alphanum))]
+	}
+	return string(bytes)
 }

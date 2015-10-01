@@ -14,8 +14,8 @@ type Eachfunc func(interface{}, interface{}, func())
 //StringEachfunc defines the type of the Mappable.Each rule
 type StringEachfunc func(interface{}, string, func())
 
-//StringMappable defines member function rules for securemap
-type StringMappable interface {
+// Maps define a set of method rules for maps of the string key types
+type Maps interface {
 	Clear()
 	HasMatch(k string, v interface{}) bool
 	Each(f StringEachfunc)
@@ -25,7 +25,18 @@ type StringMappable interface {
 	Get(string) interface{}
 	Remove(string)
 	Set(k string, v interface{})
+}
+
+//StringMappable defines member function rules for securemap
+type StringMappable interface {
+	Maps
 	Clone() StringMappable
+}
+
+// Collectors defines member function rules for collector
+type Collectors interface {
+	Maps
+	Clone() Collector
 }
 
 //NewCollector returns a new collector instance
@@ -108,6 +119,12 @@ func (c Collector) Clear() {
 	}
 }
 
+// SyncCollectors defines member function rules for SyncCollector
+type SyncCollectors interface {
+	Maps
+	Clone() SyncCollectors
+}
+
 // SyncCollector provides a mutex controlled map
 type SyncCollector struct {
 	c  Collector
@@ -121,7 +138,7 @@ func NewSyncCollector() *SyncCollector {
 }
 
 //Clone makes a new clone of this collector
-func (c *SyncCollector) Clone() *SyncCollector {
+func (c *SyncCollector) Clone() SyncCollectors {
 	var co Collector
 
 	c.rw.RLock()
