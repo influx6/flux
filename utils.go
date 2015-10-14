@@ -17,6 +17,20 @@ func Capitalize(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
+// ToCamelCase takes a string set and returns the camelcase version
+func ToCamelCase(set []string) string {
+	var camel []string
+	for ind, word := range set {
+		cameld := word
+		if ind > 0 {
+			cameld = (strings.ToUpper(word[:1]) + word[1:])
+		}
+
+		camel = append(camel, cameld)
+	}
+	return strings.Join(camel, "")
+}
+
 //MakeDuration allows you to make create a duration from a string
 func MakeDuration(target string, def int) time.Duration {
 	if !elapso.MatchString(target) {
