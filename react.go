@@ -3,7 +3,6 @@ package flux
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"sync"
@@ -36,7 +35,7 @@ type Reactor interface {
 	UseRoot(Reactor)
 }
 
-// FlatReactor provides a pure functional reactor
+// FlatReactor provides a pure functional reactor which uses an internal wait group to ensure if close is called that call values where delivered
 type FlatReactor struct {
 	op SignalMuxHandler
 	// root,next Reactor
@@ -56,9 +55,9 @@ func Reactive(fx SignalMuxHandler) Reactor {
 func FlatReactive(op SignalMuxHandler) *FlatReactor {
 	fr := FlatReactor{
 		op:       op,
-		branches: NewMapReact(),
-		enders:   NewMapReact(),
-		roots:    NewMapReact(),
+		branches: newMapReact(),
+		enders:   newMapReact(),
+		roots:    newMapReact(),
 		csignal:  make(chan bool),
 	}
 
@@ -89,6 +88,18 @@ func IdentityMuxer() SignalMuxHandler {
 			return
 		}
 		r.Reply(data)
+	}
+}
+
+// SimpleMuxer provides the handoler for a providing a pure piping behaviour where data is left untouched as it comes in and goes out
+func SimpleMuxer(fx func(Reactor, interface{})) SignalMuxHandler {
+	return func(r Reactor, err error, data interface{}) {
+		if err != nil {
+			r.ReplyError(err)
+			return
+		}
+
+		fx(r, data)
 	}
 }
 
@@ -216,17 +227,24 @@ func (f *FlatReactor) CloseNotify() <-chan bool {
 
 // Close closes the reactor and removes all connections
 func (f *FlatReactor) Close() error {
-	if f.closed {
+	f.wo.Lock()
+	ok := f.closed
+	f.wo.Unlock()
+
+	if ok {
 		return nil
 	}
 
 	f.wg.Wait()
+
+	f.wo.Lock()
 	f.closed = true
+	f.wo.Unlock()
 
 	f.branches.Close()
 
 	f.roots.Do(func(rm SenderDetachCloser) {
-		rm.Detach(f)
+		go rm.Detach(f)
 	})
 
 	f.roots.Close()
@@ -255,6 +273,7 @@ type Sender interface {
 
 // Send applies a message value to the handler
 func (f *FlatReactor) Send(b interface{}) {
+	// if b == nil { return }
 	f.wg.Add(1)
 	defer f.wg.Done()
 	f.op(f, nil, b)
@@ -262,6 +281,7 @@ func (f *FlatReactor) Send(b interface{}) {
 
 // SendError applies a error value to the handler
 func (f *FlatReactor) SendError(err error) {
+	// if err == nil { return }
 	f.wg.Add(1)
 	defer f.wg.Done()
 	f.op(f, err, nil)
@@ -504,7 +524,7 @@ type mapReact struct {
 }
 
 // NewMapReact returns a new MapReact store
-func NewMapReact() *mapReact {
+func newMapReact() *mapReact {
 	ma := mapReact{ma: make(map[SenderDetachCloser]bool)}
 	return &ma
 }
@@ -545,11 +565,18 @@ func (m *mapReact) Add(r SenderDetachCloser) {
 
 // Disable a particular sender
 func (m *mapReact) Disable(r SenderDetachCloser) {
+	var ok bool
 	m.ro.RLock()
-	defer m.ro.RUnlock()
-	if _, ok := m.ma[r]; ok {
-		m.ma[r] = false
+	_, ok = m.ma[r]
+	m.ro.RUnlock()
+
+	if !ok {
+		return
 	}
+
+	m.ro.Lock()
+	m.ma[r] = false
+	m.ro.Unlock()
 }
 
 // Length returns the length of the map
@@ -628,6 +655,9 @@ func JSONReactor() Reactor {
 	})
 }
 
+// ErrValueType is returned by FileLoader if it gets a type that is not a string
+var ErrValueType = errors.New("Value is not a string type")
+
 // FileLoader provides an adaptor to load a file path
 func FileLoader() Reactor {
 	return Reactive(func(v Reactor, err error, d interface{}) {
@@ -640,7 +670,7 @@ func FileLoader() Reactor {
 		var ok bool
 
 		if file, ok = d.(string); !ok {
-			v.ReplyError(fmt.Errorf("%q is not a string type", d))
+			v.ReplyError(ErrValueType)
 			return
 		}
 
