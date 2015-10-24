@@ -131,6 +131,14 @@ func LiftOnly(rs ...Reactor) {
 	Lift(false, rs...)
 }
 
+// LiftOut uses Lift to chain a set of reactors and returns a new reactor which is the last in the chain
+func LiftOut(conClose bool, rs ...Reactor) Reactor {
+	lr := FlatIdentity()
+	rs = append(rs, lr)
+	Lift(conClose, rs...)
+	return lr
+}
+
 // Lift takes a set of Connectors and pipes the data from one to the next
 func Lift(conClose bool, rs ...Reactor) {
 	if len(rs) <= 1 {
