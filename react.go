@@ -109,6 +109,11 @@ func FlatIdentity() *FlatReactor {
 	return FlatReactive(IdentityMuxer())
 }
 
+// FlatSimple returns a reactor using the SimpleMuxer as a mux generator
+func FlatSimple(fx func(Reactor, interface{})) Reactor {
+	return Reactive(SimpleMuxer(fx))
+}
+
 // FlatAlways returns a reactor with consistently returns the provided value
 func FlatAlways(v interface{}) Reactor {
 	return FlatReactive(IdentityValueMuxer(v))
