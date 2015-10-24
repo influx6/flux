@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"sync"
+	"sync/atomic"
 )
 
 // ErrFailedBind represent a failure in binding two Reactors
@@ -625,15 +626,51 @@ func (m *mapReact) Close() {
 // ChannelStream provides a simple struct for exposing outputs from Reactor to outside
 type ChannelStream struct {
 	Data   chan interface{}
-	Errors chan error
+	Error  chan error
+	closed int64
 }
 
-// NewChannelStream returns a new channel stream instance
+// NewChannelStream returns a new channel stream instance with blocked channels, so ensure to fullfill the contract of removing the data you need only
 func NewChannelStream() *ChannelStream {
-	return &ChannelStream{
-		Data:   make(chan interface{}),
-		Errors: make(chan error),
+	cs := ChannelStream{
+		Data:  make(chan interface{}),
+		Error: make(chan error),
 	}
+	return &cs
+}
+
+func (c *ChannelStream) error(err error) {
+	if atomic.LoadInt64(&c.closed) <= 0 {
+		go func() { c.Error <- err }()
+	}
+}
+
+func (c *ChannelStream) data(d interface{}) {
+	if atomic.LoadInt64(&c.closed) <= 0 {
+		go func() { c.Data <- d }()
+	}
+}
+
+// Close ends the capability to use the ChannelStream channels
+func (c *ChannelStream) Close() {
+	atomic.StoreInt64(&c.closed, 1)
+}
+
+// Listen binds into a reactor and will pipe any response into its Data or Error channels, always use this to bind to reactors, to ensure safety in code use i.e dont try to pipe into the channels your own way
+func (c *ChannelStream) Listen(m Reactor) {
+	if atomic.LoadInt64(&c.closed) > 0 {
+		return
+	}
+
+	m.React(func(m Reactor, err error, data interface{}) {
+		if err != nil {
+			c.error(err)
+			m.ReplyError(err)
+			return
+		}
+		c.data(data)
+		m.Reply(err)
+	}, true)
 }
 
 // JSONReactor provides a json encoding Reactor,takes any input and tries to transform it into a json using the default json.Marshal function
