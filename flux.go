@@ -5,9 +5,6 @@ import (
 	"sync"
 )
 
-//Collector defines a typ of map string
-type Collector map[string]interface{}
-
 //Eachfunc defines the type of the Mappable.Each rule
 type Eachfunc func(interface{}, interface{}, func())
 
@@ -38,6 +35,9 @@ type Collectors interface {
 	Maps
 	Clone() Collector
 }
+
+//Collector defines a typ of map string
+type Collector map[string]interface{}
 
 //NewCollector returns a new collector instance
 func NewCollector() Collector {
