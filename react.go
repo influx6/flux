@@ -655,12 +655,14 @@ func NewChannelStream() *ChannelStream {
 func (c *ChannelStream) error(err error) {
 	if atomic.LoadInt64(&c.closed) <= 0 {
 		go func() { c.Error <- err }()
+		// c.Error <- err
 	}
 }
 
 func (c *ChannelStream) data(d interface{}) {
 	if atomic.LoadInt64(&c.closed) <= 0 {
 		go func() { c.Data <- d }()
+		// c.Data <- d
 	}
 }
 
